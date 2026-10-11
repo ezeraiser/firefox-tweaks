@@ -13,7 +13,9 @@
 //  +60 sn   5) ANA SÜREÇ + GPU kırpılır (derin uykudan 60 sn sonra; yalnızca hiçbir sayfa görünmüyorsa).
 //  180 sn   6) O sekmenin süreci kırpılır (working set: sayfalar RAM'den çıkar, içerik kalır).
 //  300 sn   7) Sekme BOŞALTILIR (discard): süreç kapanır, bellek tamamen serbest kalır; tıklayınca yeniden yüklenir.
-//  + Pencere küçültülünce "genel küçültme": birkaç sn sonra tüm süreçler kırpılır, boşta kaldıkça periyodik tekrar.
+//  + Pencere küçültülünce (hiçbir sayfa görünmüyorsa) "genel küçültme" SIRASI: 1) hemen genel GC/CC/memory temizliği (kırpma YOK),
+//    2) tüm sekmeler uykuya, 3) derin uykuya girer (yukarıdaki çizelge, seçili sekme dahil), 4) EN SONDA tüm süreçler kırpılır;
+//    boşta kaldıkça periyodik tekrar (önce temizlik, sonra kırpma).
 //
 // MUAFİYETLER: Ses/video/PiP/paylaşım yapan sekmeler ve yüklenmekte olanlar zincirin HİÇBİR adımına girmez
 // (süreçleri de kırpılmaz). Sabitlenmiş sekmeler yalnızca boşaltılmaz. Süreci görünür/medya sekmeyle paylaşılan
@@ -27,23 +29,80 @@
     if (typeof gBrowser === 'undefined') return;
 
     // ===========================================
-    // AYARLAR (süreler "sekme görünmez olduktan sonra" geçen saniyedir)
+    // AYARLAR - TETİKLENME SIRASINA GÖRE
     // ===========================================
+    //
+    // ZİNCİR HARİTASI (ok = "bunu tetikler"). Süreler, sekmenin GÖRÜNMEZ OLDUĞU anı 0 sayar:
+    //
+    //   [0 Temel]  TICK_SECONDS saniyede bir bakılır; SKIP_ACTIVE_MEDIA_TABS ile medya sekmeleri zincirden çıkarılır.
+    //        |
+    //        v   sekmeden ayrılınca (başka sekmeye geçince ya da pencere küçülünce)
+    //   [1 UYKU]        SLEEP_AFTER_SECONDS (2 sn)  --> zamanlayıcılar durur (SLEEP_EXEMPT_HOSTS hariç)
+    //        |                                          + RECLAIM_ON_SLEEP: o sekmenin sürecinde GC/CC/memory
+    //        |                                          + SLEEP_WAKE_INTERVAL/DURATION: uykuda kısa uyanmalar
+    //        v
+    //   [2 DERİN UYKU]  DEEP_SLEEP_AFTER_SECONDS (60 sn) --> artık hiç uyanmaz
+    //        |                                          + DEEP_RECLAIM_IF_GROWN_MB: bellek büyüdüyse 2. GC/CC/memory
+    //        |
+    //        +--> [3 ANA SÜREÇ + GPU]  MAIN_GPU_TRIM_AFTER_DEEP_SECONDS (+60 sn), MAIN_GPU_MIN_INTERVAL_SECONDS (300 sn)
+    //        v                         (yalnızca hiçbir sayfa görünmüyorsa)
+    //   [4 SEKME KIRPMA]  TAB_TRIM_AFTER_SECONDS (180 sn) --> o sekmenin süreci kırpılır
+    //        |
+    //        v
+    //   [5 BOŞALTMA]      DISCARD_AFTER_SECONDS (300 sn) --> sekme boşaltılır (DISCARD_* kuralları geçerse)
+    //
+    //   [6 GENEL KÜÇÜLTME] pencere küçülünce (hiçbir sayfa görünmüyorsa), yukarıdaki zincirle BİRLİKTE:
+    //        MINIMIZE_RECLAIM_AFTER_SECONDS (3 sn): hemen genel GC/CC/memory (kırpma YOK)
+    //          --> sekmeler [1 UYKU] ve [2 DERİN UYKU] adımlarından geçer (seçili sekme dahil)
+    //          --> DEEP_SLEEP_AFTER_SECONDS + MINIMIZE_TRIM_AFTER_DEEP_SECONDS (60+10 sn): TÜM süreçler kırpılır
+    //          --> MINIMIZE_RETRIM_MINUTES (10 dk): boşta kaldıkça önce temizlik, sonra kırpma tekrarlanır
+    //        Kırpmanın kapsamı: TRIM_HELPER_PROCESSES, TRIM_EXTENSION_PROCESS; medya varken: TRIM_OTHERS_WHILE_MEDIA_PLAYS.
+    //
+    //   Sekme tekrar görününce (ya da pencere geri açılınca) o sekmenin zinciri iptal olur, uyku çözülür, süre sıfırdan başlar.
     const CONFIG = {
-        // ------------------------------------------------------------------
-        // 1) UYKU (adım 1-2)
-        // ------------------------------------------------------------------
+        // ==================================================================
+        // 0) TEMEL (zincirin hepsini etkiler)
+        // ==================================================================
 
         /**
-         * Sekmeden ayrıldıktan kaç saniye sonra sekme uykuya geçsin? Uyku = setTimeout/setInterval durur,
-         * sayfa içeriği ve durumu aynen kalır. Çok küçük (0-1) yaparsanız sekmeler arasında hızlı gidip
-         * gelirken gereksiz dondurup çözer. 2-5 mantıklıdır.
+         * Betik kaç saniyede bir sekmelere baksın? Zincirdeki tüm sürelerin hassasiyetini belirler (1 = en çok 1 sn
+         * sapma). Hafif bir iştir; değiştirmenize gerek yok.
+         * TETİKLER: aşağıdaki her adımı (adımlar bu kontrolde süresi dolmuş mu diye bakılarak çalışır).
+         */
+        TICK_SECONDS: 1,
+
+        /**
+         * true: Ses çalan / Picture-in-Picture / ekran-kamera paylaşan sekmeler zincirin HİÇBİR adımına (uyku, GC,
+         * kırpma, boşaltma) girmez ve süreçleri kırpılmaz. false yapmanız önerilmez (müzik/video kesilir).
+         * ETKİLER: [1]-[6] hepsi.
+         */
+        SKIP_ACTIVE_MEDIA_TABS: true,
+
+        // ==================================================================
+        // 1) UYKU - sekmeden ayrıldıktan SLEEP_AFTER_SECONDS sonra
+        // ==================================================================
+
+        /**
+         * Sekmeden ayrıldıktan kaç saniye sonra sekme uykuya geçsin? Uyku = setTimeout/setInterval durur, sayfa
+         * içeriği ve durumu aynen kalır. Çok küçük (0-1) yaparsanız sekmeler arasında hızlı gidip gelirken gereksiz
+         * dondurup çözer. 2-5 mantıklıdır.
+         * TETİKLEYEN: sekmenin görünmez olması. TETİKLER: RECLAIM_ON_SLEEP (aynı anda), SLEEP_WAKE_* (uyanma döngüsü),
+         * ve süre dolunca [2 DERİN UYKU].
          */
         SLEEP_AFTER_SECONDS: 2,
 
         /**
-         * Uykudaki (henüz derin uykuya geçmemiş) sekme kaç saniyede bir kısa süre uyansın? Bazı siteler arka
-         * planda ara sıra çalışmak ister. 0 = uykuda da hiç uyandırma. Derin uykuda uyandırma HİÇ yoktur.
+         * true: Sekme uykuya geçince O SEKMENİN sürecinde GC + CC + heap-minimize çalışır. Sayfa içeriği silinmez,
+         * yalnızca çöp atılır; bellek GERÇEKTEN düşer. Süreç görünür/medya sekmeyle paylaşılıyorsa atlanır.
+         * TETİKLEYEN: [1] uyku. TETİKLER: DEEP_RECLAIM_IF_GROWN_MB için bellek ölçümü (3 sn sonra "temizlik sonrası
+         * bellek" kaydedilir).
+         */
+        RECLAIM_ON_SLEEP: true,
+
+        /**
+         * Uykudaki (henüz derin uykuya geçmemiş) sekme kaç saniyede bir kısa süre uyansın? Bazı siteler arka planda
+         * ara sıra çalışmak ister. 0 = uykuda da hiç uyandırma. Derin uykuda uyandırma HİÇ yoktur.
+         * TETİKLEYEN: [1] uyku. DURDURAN: [2] derin uyku.
          */
         SLEEP_WAKE_INTERVAL_SECONDS: 20,
 
@@ -52,64 +111,66 @@
 
         /**
          * Bu sitelerin sekmeleri ASLA uyutulmaz (alt alan adları dahil: "google.com" yazarsanız mail.google.com da
-         * kapsanır). Sohbet/e-posta/toplantı gibi arka planda bağlantı tutması gerekenler için. Bu sekmelerde
-         * yine de bellek temizliği (GC/CC) ve kırpma yapılır; bunlar siteyi bozmaz.
+         * kapsanır). Sohbet/e-posta/toplantı gibi arka planda bağlantı tutması gerekenler için. Bu sekmelerde yine de
+         * bellek temizliği (GC/CC), kırpma ve (DISCARD_EXEMPT_HOSTS'ta değilse) boşaltma uygulanır.
          */
         SLEEP_EXEMPT_HOSTS: [],
 
+        // ==================================================================
+        // 2) DERİN UYKU - sekmeden ayrıldıktan DEEP_SLEEP_AFTER_SECONDS sonra
+        // ==================================================================
+
         /**
-         * true: Sekme uykuya geçince O SEKMENİN sürecinde GC + CC + heap-minimize çalışır (adım 2). Sayfa içeriği
-         * silinmez, yalnızca çöp atılır. Süreç görünür/medya sekmeyle paylaşılıyorsa atlanır.
+         * Sekme kaç saniye görünmez kalınca derin uykuya geçsin? Derin uykuda sekme artık hiç uyandırılmaz.
+         * TETİKLEYEN: sekmenin [1] uykudan sonra da görünmez kalması. TETİKLER: DEEP_RECLAIM_IF_GROWN_MB (ikinci
+         * temizlik), [3] ana süreç + GPU sayacı (MAIN_GPU_TRIM_AFTER_DEEP_SECONDS) ve [6]'daki genel kırpma süresi.
          */
-        RECLAIM_ON_SLEEP: true,
-
-        // ------------------------------------------------------------------
-        // 2) DERİN UYKU (adım 3-4)
-        // ------------------------------------------------------------------
-
-        /** Sekme kaç saniye görünmez kalınca derin uykuya geçsin? (Artık hiç uyandırılmaz.) */
         DEEP_SLEEP_AFTER_SECONDS: 60,
 
         /**
-         * Derin uykuya geçerken ikinci bellek temizliği (adım 4) yalnızca, sürecin belleği ilk temizlikten (adım 2)
-         * beri en az bu kadar MB büyüdüyse yapılır. Çünkü zamanlayıcılar durmuşken bellek pek büyümez ve her
-         * temizlik, sekmeye dönünce JIT kodunu soğuk bırakıp ilk anı yavaşlatır. 0 = her zaman yap.
+         * Derin uykuya geçerken ikinci bellek temizliği yalnızca, sürecin belleği ilk temizlikten (RECLAIM_ON_SLEEP)
+         * beri en az bu kadar MB büyüdüyse yapılır. Çünkü zamanlayıcılar durmuşken bellek pek büyümez ve her temizlik,
+         * sekmeye dönünce JIT kodunu soğuk bırakıp ilk anı yavaşlatır. 0 = her zaman yap.
+         * TETİKLEYEN: [2] derin uyku (RECLAIM_ON_SLEEP ölçümüyle kıyaslar).
          */
         DEEP_RECLAIM_IF_GROWN_MB: 8,
 
-        // ------------------------------------------------------------------
-        // 3) ANA SÜREÇ + GPU KIRPMA (adım 5)
-        // ------------------------------------------------------------------
+        // ==================================================================
+        // 3) ANA SÜREÇ + GPU KIRPMA - derin uykudan MAIN_GPU_TRIM_AFTER_DEEP_SECONDS sonra
+        // ==================================================================
 
         /**
          * Bir sekme derin uykuya girdikten kaç saniye sonra ana süreç + GPU kırpılsın? Tek bir sayaç vardır: sayaç
-         * çalışırken başka bir sekmenin derin uykuya girmesi onu yeniden başlatmaz. Sayaç dolunca kırpma YALNIZCA
-         * hiçbir sayfa ekranda görünmüyorsa (pencere küçük/örtülü) yapılır; siz bir sekmeyi kullanırken ana süreç ve
-         * GPU kırpılırsa takılma olur, bu yüzden o durumda sayaç sessizce iptal edilir.
+         * çalışırken başka bir sekmenin derin uykuya girmesi onu yeniden başlatmaz; dolunca kırpılır, sonraki derin
+         * uyku yeni sayaç başlatır. Kırpma YALNIZCA hiçbir sayfa ekranda görünmüyorsa yapılır; siz bir sekmeyi
+         * kullanırken ana süreç ve GPU kırpılırsa takılma olur, bu yüzden o durumda sayaç sessizce iptal edilir.
+         * TETİKLEYEN: [2] derin uyku. Medya çalarken TRIM_OTHERS_WHILE_MEDIA_PLAYS'a bağlıdır.
          */
         MAIN_GPU_TRIM_AFTER_DEEP_SECONDS: 60,
 
-        /** İki ana süreç + GPU kırpması arasında en az kaç saniye geçsin? (Sık sık kırpmayı önler.) */
+        /** İki ana süreç + GPU kırpması arasında en az kaç saniye geçsin? (Sık sık kırpmayı önler; [6] genel kırpma da sayılır.) */
         MAIN_GPU_MIN_INTERVAL_SECONDS: 300,
 
-        // ------------------------------------------------------------------
-        // 4) SEKME SÜRECİ KIRPMA (adım 6)
-        // ------------------------------------------------------------------
+        // ==================================================================
+        // 4) SEKME SÜRECİ KIRPMA - sekmeden ayrıldıktan TAB_TRIM_AFTER_SECONDS sonra
+        // ==================================================================
 
         /**
-         * Sekme kaç saniye görünmez kalınca O SEKMENİN süreci kırpılsın (EmptyWorkingSet)? Sayfalar RAM'den
-         * çıkar, içerik kaybolmaz. Süreç görünür/medya sekmeyle paylaşılıyorsa atlanır. 0 = kapalı.
+         * Sekme kaç saniye görünmez kalınca O SEKMENİN süreci kırpılsın (EmptyWorkingSet)? Sayfalar RAM'den çıkar,
+         * içerik kaybolmaz. Süreç görünür/medya sekmeyle paylaşılıyorsa atlanır (30 sn sonra yeniden denenir).
+         * 0 = kapalı. TETİKLEYEN: sekmenin [2] derin uykudan sonra da görünmez kalması (bellek önce temizlenmiş olur).
          */
         TAB_TRIM_AFTER_SECONDS: 180,
 
-        // ------------------------------------------------------------------
-        // 5) BOŞALTMA (adım 7)
-        // ------------------------------------------------------------------
+        // ==================================================================
+        // 5) BOŞALTMA - sekmeden ayrıldıktan DISCARD_AFTER_SECONDS sonra
+        // ==================================================================
 
         /**
          * Sekme kaç saniye görünmez kalınca boşaltılsın (discard)? Süreç kapanır, bellek gerçekten serbest kalır;
          * sekmeye tıklayınca sayfa yeniden yüklenir (kaydırma/form verisi geri gelir, canlı durum kaybolabilir).
-         * 0 = boşaltma kapalı.
+         * 0 = boşaltma kapalı. Boşaltılan sekmenin zinciri biter; tekrar açılınca sıfırdan başlar.
+         * TETİKLEYEN: [4] sekme kırpmadan sonra da sekmenin görünmez kalması. Aşağıdaki DISCARD_* kuralları süzer.
          */
         DISCARD_AFTER_SECONDS: 300,
 
@@ -120,14 +181,14 @@
         DISCARD_ONLY_HTTP: true,
 
         /**
-         * true: Süreci görünür/medya/yükleniyor bir sekmeyle paylaşılan sekme boşaltılmaz. Boşaltmak o süreci
-         * kapatmaz (bellek kazanılmaz) ama sekmeyi boşuna yeniden yükletir. "Sürece zarar vermeyen" kuralı budur.
+         * true: Süreci görünür/medya/yükleniyor bir sekmeyle paylaşılan sekme boşaltılmaz. Boşaltmak o süreci kapatmaz
+         * (bellek kazanılmaz) ama sekmeyi boşuna yeniden yükletir. "Sürece zarar vermeyen" kuralı budur.
          */
         DISCARD_SKIP_SHARED_PROCESS: true,
 
         /**
-         * Bu sitelerin sekmeleri HİÇ boşaltılmaz (alt alan adları dahil). Yarım kalmış yazı, sohbet, toplantı,
-         * canlı akış gibi içeriği kaybolmaması gereken siteler. (Uyku/kırpma bunlara yine uygulanır.)
+         * Bu sitelerin sekmeleri HİÇ boşaltılmaz (alt alan adları dahil). Yarım kalmış yazı, sohbet, toplantı, canlı
+         * akış gibi içeriği kaybolmaması gereken siteler. (Uyku/kırpma bunlara yine uygulanır.)
          */
         DISCARD_EXEMPT_HOSTS: [
             'chatgpt.com', 'openai.com', 'claude.ai', 'web.whatsapp.com', 'discord.com',
@@ -139,47 +200,56 @@
         /** true: HİÇBİR sekmeyi boşaltmaz, yalnızca "boşaltırdım" diye günlüğe yazar (deneme için). */
         DRY_RUN_DISCARD: false,
 
-        // ------------------------------------------------------------------
-        // 6) GENEL KÜÇÜLTME ADIMI (pencere küçültülünce / tamamen örtülünce)
-        // ------------------------------------------------------------------
+        // ==================================================================
+        // 6) GENEL KÜÇÜLTME - hiçbir sayfa görünmüyorsa (pencere küçültüldü / tamamen örtüldü)
+        // ==================================================================
 
         /**
-         * true: Hiçbir sayfa görünmüyorsa (pencere küçültüldü) TÜM süreçler (ana, GPU, yardımcı, uzantı ve
-         * gizli sekme süreçleri) kırpılır ve boşta kaldıkça periyodik tekrarlanır. Küçültülen pencerede seçili
-         * sekme de "ayrılmış" sayılır: kendi zaman çizelgesi (uyku, derin uyku...) başlar.
+         * true: Genel küçültme çalışır. Sıra: 1) MINIMIZE_RECLAIM_AFTER_SECONDS sonra genel GC/CC/memory (kırpma YOK),
+         * 2) sekmeler uykuya ve 3) derin uykuya geçer (normal çizelge; küçültülen pencerede seçili sekme de "ayrılmış"
+         * sayılır), 4) en sonda TÜM süreçler kırpılır. Kırpmayı en sona bırakmak, önce çöpün atılmasını ve sekmelerin
+         * durmasını bekler; böylece kırpılan sayfalar hemen geri dolmaz.
+         * TETİKLEYEN: hiçbir sayfanın görünmemesi. Pencere geri açılınca her şey iptal olur.
          */
         MINIMIZE_TRIM_ENABLED: true,
 
-        /** Hiçbir sayfa görünmez olduktan kaç saniye sonra genel kırpma başlasın? */
-        MINIMIZE_TRIM_AFTER_SECONDS: 5,
+        /**
+         * Hiçbir sayfa görünmez olduktan kaç saniye sonra genel bellek temizliği (GC/CC/heap-minimize) yapılsın?
+         * Pencereyi hemen geri açarsanız boşuna temizlenmesin diye küçük bir bekleme vardır. Medya çalıyorsa yalnızca
+         * ana süreçte GC/CC yapılır (memory-pressure bildirimi medya sekmesine de gider).
+         * TETİKLEYEN: [6] küçültme. TETİKLER: sekmelerin [1] uykusu zaten kendi çizelgesiyle başlar.
+         */
+        MINIMIZE_RECLAIM_AFTER_SECONDS: 3,
 
         /**
-         * Boşta kalırken süreçler zamanla şişer. Kaç dakikada bir tekrar (önce global GC/CC, sonra kırpma)
-         * yapılsın? 0 = yalnızca bir kez.
+         * Genel kırpma, DERİN UYKU süresi dolduktan kaç saniye sonra yapılsın? (Küçültme anından itibaren toplam
+         * süre = DEEP_SLEEP_AFTER_SECONDS + bu ayar.) Önce tüm sekmeler uyur ve derin uykuya girer, sonra kırpılır.
+         * TETİKLEYEN: [2] derin uyku süresinin dolması. TETİKLER: TRIM_* ayarlarının kapsamıyla tüm süreçlerin kırpılması.
+         */
+        MINIMIZE_TRIM_AFTER_DEEP_SECONDS: 10,
+
+        /**
+         * Boşta kalırken süreçler zamanla şişer. Kaç dakikada bir tekrar (önce genel GC/CC/memory, 4 sn sonra kırpma)
+         * yapılsın? 0 = yalnızca bir kez. TETİKLEYEN: bir önceki genel kırpmadan bu kadar süre geçmesi.
          */
         MINIMIZE_RETRIM_MINUTES: 10,
 
-        /** true: Genel kırpmada ağ/ses/depolama gibi yardımcı süreçler de kırpılır. false: yalnızca ana + GPU + sekmeler. */
+        /** true: Genel kırpmada ağ/ses/depolama gibi yardımcı süreçler de kırpılır. false: yalnızca ana + GPU + sekme/uzantı süreçleri. */
         TRIM_HELPER_PROCESSES: true,
 
-        /** true: Uzantı sürecini (uBlock vb.) de kırpar. */
+        /** true: Genel kırpmada uzantı sürecini (uBlock vb.) de kırpar. */
         TRIM_EXTENSION_PROCESS: true,
 
         /**
-         * true: Ses çalan bir sekme VARKEN de genel küçültme ve derin uyku sonrası kırpma devam eder; yalnızca O
-         * MEDYA SEKMESİNİN SÜRECİ atlanır. PiP/ekran paylaşımı varsa GPU da atlanır (görüntü işleniyor).
+         * true: Ses çalan bir sekme VARKEN de [3] ana süreç + GPU kırpması ve [6] genel küçültme devam eder; yalnızca
+         * O MEDYA SEKMESİNİN SÜRECİ atlanır. PiP/ekran paylaşımı varsa GPU da atlanır (görüntü işleniyor). false: medya
+         * çalarken bu iki adım tamamen durur.
          */
         TRIM_OTHERS_WHILE_MEDIA_PLAYS: true,
 
-        /** true: Ses çalan / PiP / ekran-kamera paylaşan sekmeler zincirin hiçbir adımına girmez. Önerilir. */
-        SKIP_ACTIVE_MEDIA_TABS: true,
-
-        // ------------------------------------------------------------------
-        // 7) ZAMANLAMA VE GÜNLÜK
-        // ------------------------------------------------------------------
-
-        /** Betik kaç saniyede bir sekmelere baksın? 1 = süre hassasiyeti 1 sn. Hafif bir iştir. */
-        TICK_SECONDS: 1,
+        // ==================================================================
+        // 7) GÜNLÜK
+        // ==================================================================
 
         /** true: Yaptığı işleri chrome\memlog.txt dosyasına yazar. Hatalar bu ayardan bağımsız HER ZAMAN yazılır. */
         ENABLE_LOGGING: true,
@@ -569,7 +639,7 @@
     // ===========================================
     // GLOBAL ADIMLAR (yalnızca lider pencere): ana süreç + GPU, genel küçültme
     // ===========================================
-    const g = { armedAt: 0, lastMainGpu: 0, minSince: 0, minLast: 0, trimCount: 0, lastHeartbeat: 0 };
+    const g = { armedAt: 0, lastMainGpu: 0, minSince: 0, minLast: 0, minReclaimed: false, trimCount: 0, lastHeartbeat: 0 };
 
     /** Bir sekme derin uykuya girdi: sayaç çalışmıyorsa başlat (çalışıyorsa yeniden başlatma). */
     function noteDeepSleep(now) {
@@ -591,21 +661,24 @@
         log(`ANA SÜREÇ + GPU kırpıldı (${why}): ${n} süreç${keepGpu ? ' (GPU atlandı: görüntü işleniyor)' : ''}${s.anyMedia ? ' (medya sekmesi atlandı: ' + s.mediaWhy + ')' : ''}`);
     }
 
-    async function minimizeTrim(s, now, repeat) {
+    /** Genel bellek temizliği (kırpma yok). Medya çalıyorsa yalnızca ana süreçte. */
+    async function globalReclaim(s, why) {
         const CU = (typeof Cu !== 'undefined') ? Cu : Components.utils;
-        if (repeat) {
-            // Boşta uzun süre kalındıysa önce global bellek temizliği
-            if (s.anyMedia) {
-                // 'memory-pressure' TÜM süreçlere (medya sekmesininki dahil) gider; medya çalarken yalnızca ana süreçte GC/CC
-                CU.forceGC(); CU.forceCC();
-                log('genel küçültme: medya çalıyor, yalnızca ana süreçte GC/CC');
-            } else {
-                CU.forceGC(); CU.forceCC(); CU.forceGC();
-                Services.obs.notifyObservers(null, 'memory-pressure', 'heap-minimize');
-                log('genel küçültme: GC/CC/heap-minimize gönderildi');
-                await new Promise(r => window.setTimeout(r, 4000));
-            }
+        if (s.anyMedia) {
+            // 'memory-pressure' TÜM süreçlere (medya sekmesininki dahil) gider; medya çalarken yalnızca ana süreçte GC/CC
+            CU.forceGC(); CU.forceCC();
+            log(`genel bellek temizliği (${why}): medya çalıyor, yalnızca ana süreçte GC/CC`);
+        } else {
+            CU.forceGC(); CU.forceCC(); CU.forceGC();
+            Services.obs.notifyObservers(null, 'memory-pressure', 'heap-minimize');
+            log(`genel bellek temizliği (${why}): GC/CC/heap-minimize tüm süreçlere gönderildi`);
+            await new Promise(r => window.setTimeout(r, 4000));
         }
+    }
+
+    async function minimizeTrim(s, now, repeat) {
+        // İlk kırpmadan önce temizlik zaten yapıldı (küçültme anında); tekrarlarda yeniden temizle.
+        if (repeat) await globalReclaim(s, 'boşta tekrar');
         const info = await ChromeUtils.requestProcInfo();
         const protectedPids = new Set([...s.procs].filter(([, p]) => p.active).map(([pid]) => pid));
         const keepGpu = s.mediaKinds.has('pip') || s.mediaKinds.has('sharing');
@@ -638,13 +711,21 @@
 
             // Genel küçültme: hiçbir sayfa görünür değil
             if (CONFIG.MINIMIZE_TRIM_ENABLED && q.allIdle && mediaOk) {
-                if (!g.minSince) { g.minSince = now; g.minLast = 0; log('hiçbir sayfa görünmüyor: genel küçültme sayacı başladı'); }
+                if (!g.minSince) { g.minSince = now; g.minLast = 0; g.minReclaimed = false; log('hiçbir sayfa görünmüyor: genel küçültme başladı'); }
+                const age = now - g.minSince;
+                // 1) hemen genel bellek temizliği (kırpma yok)
+                if (!g.minReclaimed && age >= CONFIG.MINIMIZE_RECLAIM_AFTER_SECONDS * 1000) {
+                    g.minReclaimed = true;
+                    await globalReclaim(snapshotAll(), 'küçültme');
+                }
+                // 2-3) uyku ve derin uyku sekme çizelgesinde kendiliğinden olur; 4) en sonda kırpma
+                const trimAfter = (CONFIG.DEEP_SLEEP_AFTER_SECONDS + CONFIG.MINIMIZE_TRIM_AFTER_DEEP_SECONDS) * 1000;
                 const due = g.minLast === 0
-                    ? now - g.minSince >= CONFIG.MINIMIZE_TRIM_AFTER_SECONDS * 1000
+                    ? age >= trimAfter
                     : (CONFIG.MINIMIZE_RETRIM_MINUTES > 0 && now - g.minLast >= CONFIG.MINIMIZE_RETRIM_MINUTES * 60000);
                 if (due) await minimizeTrim(snapshotAll(), now, g.minLast !== 0);
             } else if (g.minSince) {
-                g.minSince = 0; g.minLast = 0;
+                g.minSince = 0; g.minLast = 0; g.minReclaimed = false;
             }
         } catch (e) { logErr('global adım hatası', e); }
         finally { globalBusy = false; }
