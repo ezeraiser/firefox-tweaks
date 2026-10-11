@@ -14,9 +14,8 @@ Test edilen sürüm: Firefox 158 (Windows 11, taşınabilir kurulum). Ayrıntıl
 | `firefox-install/config.js` | Autoconfig yükleyicisi: profildeki `chrome\*.uc.js` betiklerini her tarayıcı penceresinde çalıştırır. İçinde ayrıca telemetri vb. tercihler var. | Firefox kurulum klasörü (`firefox.exe`'nin yanı) |
 | `firefox-install/defaults/pref/config-prefs.js` | `config.js`'i etkinleştirir (`general.config.filename`, `sandbox_enabled=false`). | `<Firefox>\defaults\pref\` |
 | `profile/user.js` | Profil ayarı: `gfx.webrender.max-shared-surface-size = 1024` (GPU belleği). | Profil klasörü (`prefs.js`'in yanı) |
-| `profile/chrome/tab_trimmer.uc.js` | Arka plandaki süreçlerin çalışma kümesini kırpar (+ tamamen boştayken GC). | `<profil>\chrome\` |
-| `profile/chrome/tab_freezer.uc.js` | Pasif sekmeyi dondurur ve yalnızca o sekmenin sürecinde GC/CC yapar. | `<profil>\chrome\` |
-| `profile/chrome/tab_discarder.uc.js` | Uzun süre kullanılmayan sekmeyi boşaltır (gerçek bellek düşer). | `<profil>\chrome\` |
+| `profile/chrome/tab_lifecycle.uc.js` | **Tek dosya, tek zaman çizelgesi:** uyku (2 sn) -> derin uyku (60 sn) -> ana süreç+GPU kırpma (+60 sn, yalnızca hiçbir sayfa görünmüyorsa) -> sekme kırpma (180 sn) -> boşaltma (300 sn) + pencere küçültünce genel küçültme. Aşağıdaki üç eski betiğin yerine geçer. | `<profil>\chrome\` |
+| `profile/disabled/tab_trimmer.uc.js`, `tab_freezer.uc.js`, `tab_discarder.uc.js` | **Eski, ayrı betikler (kullanmayın).** `tab_lifecycle.uc.js` ile aynı anda çalışırsa aynı sekmeyi iki kez dondurup kırparlar. | - |
 | `profile/disabled/memory_cleaner.uc.js` | **Devre dışı**: eski GC/CC betiği. Canlı profilden çıkarıldı (ana süreçte GC+CC ölçümde fayda vermedi, yalnızca ~20 ms takılma ekliyordu). | (kopyalanmaz) |
 | `profile/chrome/ExtensionToggleManager.uc.js` | Kendi uzantı yöneticiniz (bu çalışmayla ilgisi yok, birlikte durması için eklendi). | `<profil>\chrome\` |
 | `Firefox.md` | Tüm araştırma, ölçümler, tuzaklar, açık işler. | - |
