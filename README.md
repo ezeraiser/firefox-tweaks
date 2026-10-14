@@ -4,7 +4,7 @@ Firefox'u fork'lamadan (profildeki userChrome betikleri + birkaç ayarla) bellek
 yaptığımız her şey: çalışan betikler, ayarlar, yükleyici, ölçüm araçları ve ayrıntılı rapor.
 Bu klasör Helium (Chromium) derlemesinden **bağımsızdır**; repoda yalnızca saklanıyor.
 
-Test edilen sürüm: Firefox 158 (Windows 11, taşınabilir kurulum). Ayrıntılı ölçümler ve nedenler:
+Test edilen sürüm: Firefox 158 (bellek ölçümleri) ve 159 (arayüz çalışması), Windows 11, taşınabilir kurulum. Ayrıntılı ölçümler ve nedenler:
 [Firefox.md](Firefox.md).
 
 ## Klasör haritası
@@ -13,17 +13,28 @@ Test edilen sürüm: Firefox 158 (Windows 11, taşınabilir kurulum). Ayrıntıl
 |---|---|---|
 | `firefox-install/config.js` | Autoconfig yükleyicisi: profildeki `chrome\*.uc.js` betiklerini her tarayıcı penceresinde çalıştırır. İçinde ayrıca telemetri vb. tercihler var. | Firefox kurulum klasörü (`firefox.exe`'nin yanı) |
 | `firefox-install/defaults/pref/config-prefs.js` | `config.js`'i etkinleştirir (`general.config.filename`, `sandbox_enabled=false`). | `<Firefox>\defaults\pref\` |
-| `profile/user.js` | Profil ayarı: `gfx.webrender.max-shared-surface-size = 1024` (GPU belleği). | Profil klasörü (`prefs.js`'in yanı) |
+| `profile/user.js` | Profil ayarları: `gfx.webrender.max-shared-surface-size = 1024` (GPU belleği) ve `toolkit.legacyUserProfileCustomizations.stylesheets = true` (`userChrome.css`'in yüklenmesi için). | Profil klasörü (`prefs.js`'in yanı) |
 | `profile/chrome/tab_lifecycle.uc.js` | **Tek dosya, tek zaman çizelgesi:** uyku (2 sn) -> derin uyku (60 sn) -> ana süreç+GPU kırpma (+60 sn, yalnızca hiçbir sayfa görünmüyorsa) -> sekme kırpma (180 sn) -> boşaltma (300 sn) + pencere küçültünce genel küçültme. Aşağıdaki üç eski betiğin yerine geçer. | `<profil>\chrome\` |
 | `profile/disabled/tab_trimmer.uc.js`, `tab_freezer.uc.js`, `tab_discarder.uc.js` | **Eski, ayrı betikler (kullanmayın).** `tab_lifecycle.uc.js` ile aynı anda çalışırsa aynı sekmeyi iki kez dondurup kırparlar. | - |
 | `profile/disabled/memory_cleaner.uc.js` | **Devre dışı**: eski GC/CC betiği. Canlı profilden çıkarıldı (ana süreçte GC+CC ölçümde fayda vermedi, yalnızca ~20 ms takılma ekliyordu). | (kopyalanmaz) |
-| `profile/chrome/ExtensionToggleManager.uc.js` | Kendi uzantı yöneticiniz (bu çalışmayla ilgisi yok, birlikte durması için eklendi). | `<profil>\chrome\` |
+| `profile/chrome/userChrome.css` + `bookmarks_bottom.uc.js` | **Arayüz:** yer imi çubuğu altta (dikey çubuğun bittiği yerden), dar ve sıkı dikey sekme şeridi, daraltılmış/ortalı adres çubuğu. Ayarlar dosyanın başındaki `--bm-*`, `--vt-*`, `--urlbar-*` değişkenleri. Ayrıntı: [docs/UI-Tasarim.md](docs/UI-Tasarim.md). | `<profil>\chrome\` |
+| `profile/chrome/urlbar_domain.uc.js` | Adres çubuğu odakta değilken yalnızca ana alan adı (ortalı); tıklayınca tam URL. `about:` sayfalarında sayfa adı. Adres çubuğunun değerine dokunmaz. Ayrıntı: [docs/UI-Tasarim.md](docs/UI-Tasarim.md). | `<profil>\chrome\` |
+| `profile/chrome/ExtensionToggleManager.uc.js` | Uzantı yöneticisi paneli (araç çubuğu düğmesi: sol tık panel, orta tık tümünü aç/kapat, sağ tık menü). Kompakt, simge tabanlı 300px arayüz; Firefox'un panel renklerine ve tooltip'lerine uyar. Mock: [docs/ext-manager-mock.html](docs/ext-manager-mock.html). Ayrıntı: [docs/UI-Tasarim.md](docs/UI-Tasarim.md). | `<profil>\chrome\` |
+| `docs/UI-Tasarim.md` | Arayüz çalışmasının tasarımı ve süreci: her parçanın nasıl çalıştığı, ölçümler, yolda öğrenilenler, denenmeyenler. | - |
 | `Firefox.md` | Tüm araştırma, ölçümler, tuzaklar, açık işler. | - |
-| `tools/firefox-marionette/` | Firefox'u geçici profille açıp içeriden ölçen/sınayan araçlar (Marionette). | - |
+| `tools/firefox-marionette/` | Firefox'u geçici profille açıp içeriden ölçen/sınayan araçlar (Marionette) ve `shot_popup.ps1` (yalnızca test penceresi önde ise açılır pencerenin ekran görüntüsü). | - |
 | `tools/chromium-speedometer-drm/` | Chromium/Helium/Edge tarafında kullanılan Speedometer, DRM yetenek probu ve JS bellek temizleme araçları. | - |
 
 Betikler, Firefox yeniden başlatılınca yüklenir. Kullandığımız profil: `...\Mozilla\UserData\Ezer1`.
 `Ezer - Kopya` profilinde eski bir `memory_cleaner` kaldı.
+
+## Arayüz özelleştirmeleri (kısaca)
+
+Bellek betiklerinin yanında Firefox'un arayüzü de Helium'daki kompakt görünüme yaklaştırıldı: yer imi çubuğu altta,
+dar dikey sekme şeridi, ortalı ve alçak adres çubuğu, yalnızca ana alan adı gösterimi ve yeniden tasarlanan uzantı
+yöneticisi paneli. Her parçanın çalışma şekli, ölçümler, yolda yapılan hatalar ve **denenmeyenler**
+[docs/UI-Tasarim.md](docs/UI-Tasarim.md) içinde. Kurulum için bu dosyaları profilin `chrome\` klasörüne
+kopyalamak ve `user.js`'i profile almak yeterli.
 
 ## Kurulum (sıfırdan)
 
@@ -46,6 +57,7 @@ Her betiğin en üstündeki `CONFIG` bloğundaki **her ayarın** Türkçe açık
 | tab_trimmer | `RETRIM_WHEN_ALL_IDLE_SECONDS` | 600 | Tamamen boştayken tüm süreçleri bu aralıkla yeniden kırp (saatlerce boştayken şişmeyi önler) |
 | tab_trimmer | `TRIM_HELPER_PROCESSES` | açık | Boştayken veri çözücü (RDD), ağ, yardımcı (utility) ve ön ayrılmış süreçler de kırpılır |
 | tab_trimmer | `TRIM_OTHERS_WHILE_MEDIA_PLAYS` | açık | **Ses/PiP/paylaşım varken bile** boştaki kırpma sürer; yalnızca o medya sekmesinin süreci atlanır |
+| tab_lifecycle | `TRIM_MEDIA_TAB_AFTER_HIDDEN_SECONDS` / `TRIM_MEDIA_TAB_EVERY_SECONDS` | 10 / 60 | Ses çalan sekmenin süreci: Firefox arka plana gidince (hiçbir sayfa görünmüyor) 10 sn sonra bir kez, sonra 60 sn'de bir kırpılır; öne gelince sayaç sıfırlanır (0: kapalı). **Denenmedi** (gerçek medya ile) |
 | tab_trimmer | `RECLAIM_WHILE_MEDIA_PLAYS` | kapalı | Medya çalarken "memory-pressure" bildirimi gönderilmez (medya sekmesinin sürecine de gider, hariç tutulamaz); yalnızca ana süreçte GC/CC |
 | tab_trimmer | `RECLAIM_BEFORE_MINIMIZED_TRIM` / `RECLAIM_REPEAT_MINUTES` | açık / 10 | Kırpmadan önce GC+CC+heap-minimize (gerçek bellek düşüşü) |
 | tab_trimmer | `TRIM_EXTENSION_PROCESS` | açık | uBlock vb. uzantı sürecini de kırp |
@@ -59,7 +71,7 @@ Her betiğin en üstündeki `CONFIG` bloğundaki **her ayarın** Türkçe açık
 | tab_discarder | `KEEP_RECENT_TABS` | 0 (betik varsayılanı 2) | Boşaltılmayan son kullanılan sekme sayısı |
 | tab_discarder | `EXEMPT_HOSTS` | sohbet/posta/medya siteleri + docs.google.com | Boşaltılmayacak siteler |
 | tab_discarder | `DRY_RUN` | false | true: boşaltmaz, yalnızca günlüğe "boşaltırdım" yazar (ilk deneme için) |
-| hepsi | `ENABLE_LOGGING` | true | `chrome\memlog.txt`'ye yazar (400 KB'ta döner); hatalar her zaman yazılır |
+| hepsi | `ENABLE_LOGGING` | true | `chrome\memlog.txt`'ye yazar (400 KB'ta döner); false ise dosyaya hiçbir şey yazılmaz (hatalar da yalnızca Tarayıcı Konsolu'na) |
 
 **Medya ilkesi (her betikte aynı):** ses çalan, Picture-in-Picture olan ya da ekran/kamera paylaşan bir sekme yalnızca **kendi
 sürecini** muaf tutar; başka hiçbir süreci/işi durdurmaz. (Kırpıcıda bu önceden genel bir kapıydı, 2026-10-09'da düzeltildi,

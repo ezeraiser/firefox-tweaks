@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Extension Toggle Manager - Optimized
-// @description    Gelişmiş extension yönetici - Optimize edilmiş versiyon
+// @description    Uzantıları aç/kapatan kompakt panel: arama, sıralama, domain kuralları
 // @author         Extension Toggle
 // @include        main
 // @startup        window.ExtensionToggleManager.init();
@@ -13,101 +13,202 @@
 
     if (window.ExtensionToggleManager) return;
 
-    // ===========================================
-    // STYLE CONSTANTS
-    // ===========================================
-    const STYLES = {
-        CONTAINER: 'width:370px;max-height:650px;background:transparent;border-radius:8px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,0.15);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif',
-        HEADER: 'background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:14px',
-        SEARCH_ROW: 'display:flex;gap:8px;align-items:center',
-        INPUT: 'flex:1;padding:6px 12px;border:none;border-radius:16px;font-size:13px;background:rgba(255,255,255,0.9);color:#333',
-        SELECT: 'padding:6px 10px;border:none;border-radius:16px;background:rgba(255,255,255,0.9);font-size:12px;color:#333;cursor:pointer',
-        LIST: 'max-height:400px;overflow-y:auto;background:#f8f9fa;padding:8px',
-        FOOTER: 'display:flex;padding:10px;background:white;border-top:1px solid #e0e0e0;gap:8px',
-        SETTINGS_FOOTER: 'display:flex;padding:8px;background:#f0f0f0;border-top:1px solid #ddd;gap:6px',
-        BUTTON: (color) => `flex:1;padding:8px 1px;border:none;border-radius:6px;font-weight:600;font-size:11px;cursor:pointer;background:${color};color:white;transition:all 0.3s`,
-        MODAL_BACKDROP: 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center',
-        MODAL: 'background:white;border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,0.3);overflow:hidden;animation:modalSlideIn 0.3s ease;color:#000',
-        MODAL_HEADER: (bg) => `display:flex;justify-content:space-between;align-items:center;padding:18px 24px;background:${bg};color:white`,
-        CLOSE_BTN: 'background:none;border:none;color:white;font-size:28px;cursor:pointer;padding:0;width:32px;height:32px;border-radius:50%;transition:background 0.3s',
-        EXT_ITEM: (active) => `display:flex;align-items:center;padding:3px;margin-bottom:8px;background:${active ? 'white' : '#f5f5f5'};border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);transition:all 0.3s;cursor:pointer;opacity:${active ? '1' : '0.7'};user-select:none;border-left:4px solid ${active ? '#4caf50' : '#ddd'}`,
-        SWITCH: (active) => `width:40px;height:22px;background:${active ? '#4caf50' : '#ccc'};border-radius:11px;position:relative;margin-right:12px;transition:background 0.3s;cursor:pointer;box-shadow:inset 0 1px 3px rgba(0,0,0,0.2)`,
-        SWITCH_KNOB: (active) => `position:absolute;width:18px;height:18px;border-radius:50%;background:white;top:2px;left:${active ? '20px' : '2px'};transition:left 0.3s;box-shadow:0 1px 3px rgba(0,0,0,0.3)`,
-        ICON_BTN: (bg, show) => `background:${bg};color:white;border:none;border-radius:50%;width:24px;height:24px;font-size:${bg === '#4caf50' ? '11px' : '12px'};cursor:pointer;margin-right:8px;opacity:0;transition:all 0.3s;display:${show ? 'flex' : 'none'};align-items:center;justify-content:center`
-    };
+    // Araç çubuğu düğmesi: Firefox'un kendi Uzantılar simgesi
+    const BTN_ICON = 'url("chrome://mozapps/skin/extensions/extension.svg")';
 
-    const ICONS = {
-        LIGHT: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAAlwSFlzAAABAQAAAQEBn5eVwwAAAJtJREFUeNpjcC/wYcCGgSASiDdBcSQudbg06wPxciT+cpAYKQaUALELEt8FJIZNLbqTE6F4NhB3IMl1gMQQ8ggvwRQYwPyKhA2QDDBAk9sEk4crQNhIGIPUUtEARKhfAfkTGoA8pBrAAw0cOVggkmIAHKPFOw8lBuwk1QtyIE0g/0PpRHJiYTY0xclRHI0DYoAcNB3sJBJfgXkVAPeRyZQejDf1AAAAAElFTkSuQmCC',
-        DARK: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQBAMAAADt3eJSAAAAAXNSR0IArs4c6QAAAAlwSFlzAAAOwAAADsABataJCQAAACpQTFRFR3BMwMDAzMzM2dnZ4+Pj5+fn5eXl7e3t6urq7Ozs7+/v7Ozs8fHx9/f3OXArmQAAAA50Uk5TABcuQV9mdJyvwMLh5vbLj3JsAAAAX0lEQVR42mNgYGDsOSHAAAKcBewTwAxuAcYNQIqpoteB9Ua7AgPLtRQFJrfcAAZWsDxnAAPLAhCDC8i41QhhMBpWgRlg7VCGNYTBvOIIVPERARADZg4XsoG3VgHBXAcANKYXcNF+Nf8AAAAASUVORK5CYII='
-    };
+    const SORT_LABELS = ['Özel sıra', 'İsme göre', 'Duruma göre'];
 
-    // ===========================================
-    // HELPER FUNCTIONS
-    // ===========================================
+    // Stil: Firefox'un panel renklerinden türer (tema ve koyu mod kendiliğinden uyar)
+    const STYLE_ID = 'etm-style';
+    const STYLE_CSS = `
+    .etm, .etm-dialog, .etm-fltoast {
+        --etm-fg: var(--arrowpanel-color, FieldText);
+        --etm-bg: var(--arrowpanel-background, Field);
+        --etm-muted: color-mix(in srgb, var(--etm-fg) 62%, transparent);
+        --etm-line: color-mix(in srgb, var(--etm-fg) 20%, transparent);
+        --etm-hover: color-mix(in srgb, var(--etm-fg) 8%, transparent);
+        --etm-press: color-mix(in srgb, var(--etm-fg) 14%, transparent);
+        --etm-field: color-mix(in srgb, var(--etm-fg) 5%, transparent);
+        --etm-accent: var(--color-accent-primary, AccentColor);
+        --etm-on-accent: AccentColorText;
+        --etm-off: color-mix(in srgb, var(--etm-fg) 45%, transparent);
+        --etm-danger: light-dark(#c50042, #ff6a8d);
+        --etm-ok: light-dark(#058b00, #54ffbd);
+        color: var(--etm-fg);
+        font: inherit;
+        font-size: 13px;
+        line-height: 1.4;
+    }
+    .etm { position: relative; width: 300px; padding: 8px; box-sizing: border-box; }
+    .etm *, .etm-dialog * { box-sizing: border-box; }
+    .etm-bar { display: flex; align-items: center; gap: 2px; }
+    /* Giriş alanları Firefox'un kendi değişkenlerini kullanır; yoksa panel renginden türer */
+    .etm-search, .etm-input, .etm-select {
+        height: 28px; margin: 0; padding: 0 8px; font: inherit;
+        border: 1px solid var(--input-border-color, var(--etm-line));
+        border-radius: var(--border-radius-small, 4px);
+        background: var(--input-background-color, var(--etm-field));
+        color: var(--input-text-color, var(--etm-fg));
+    }
+    .etm-search:hover, .etm-input:hover, .etm-select:hover { border-color: var(--input-border-color-hover, var(--border-color-interactive-hover, var(--etm-fg))); }
+    .etm-search { flex: 1; min-width: 0; margin-inline-end: 4px; }
+    .etm-search::placeholder, .etm-input::placeholder { color: var(--etm-muted); }
+    .etm-search:focus-visible, .etm-input:focus-visible, .etm-select:focus-visible {
+        outline: 2px solid var(--focus-outline-color, var(--etm-accent)); outline-offset: -1px;
+        border-color: var(--focus-outline-color, var(--etm-accent));
+    }
+    .etm-ib {
+        width: 28px; height: 28px; border: 0; border-radius: 4px; background: transparent; color: var(--etm-fg);
+        display: grid; place-items: center; cursor: pointer; padding: 0; margin: 0; flex: none;
+    }
+    .etm-ib svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+    .etm-ib:hover { background: var(--etm-hover); }
+    .etm-ib:active { background: var(--etm-press); }
+    .etm-ib:focus-visible { outline: 2px solid var(--etm-accent); outline-offset: -2px; }
+    .etm-list { margin-top: 6px; max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+    .etm-row { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 4px 0 6px; border-radius: 4px; position: relative; flex: none; }
+    .etm-row:hover { background: var(--etm-hover); }
+    .etm-row.etm-dragging { opacity: .45; }
+    .etm-row.etm-over { box-shadow: inset 0 2px 0 var(--etm-accent); }
+    .etm-grip { width: 10px; flex: none; margin-inline-start: -6px; opacity: 0; cursor: grab; display: grid; place-items: center; color: var(--etm-muted); }
+    .etm-grip svg { width: 10px; height: 14px; fill: currentColor; stroke: none; }
+    .etm-row:hover .etm-grip, .etm-row:focus-within .etm-grip { opacity: .8; }
+    .etm-ico { width: 18px; height: 18px; border-radius: 4px; flex: none; display: grid; place-items: center; font-size: 10px; font-weight: 700; color: #fff; background: var(--etm-off); object-fit: contain; }
+    .etm-row.etm-off .etm-ico { filter: grayscale(1); opacity: .55; }
+    .etm-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .etm-row.etm-off .etm-name { color: var(--etm-muted); }
+    .etm-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--etm-accent); flex: none; }
+    .etm-acts { display: flex; opacity: 0; }
+    .etm-row:hover .etm-acts, .etm-row:focus-within .etm-acts { opacity: 1; }
+    .etm-acts .etm-ib { width: 24px; height: 24px; }
+    .etm-sw { width: 28px; height: 16px; border-radius: 8px; border: 0; padding: 0; margin: 0; position: relative; flex: none; cursor: pointer; background: var(--etm-off); }
+    .etm-sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--etm-bg); transition: transform .12s; }
+    .etm-sw[aria-checked="true"] { background: var(--etm-accent); }
+    .etm-sw[aria-checked="true"]::after { transform: translateX(12px); background: var(--etm-on-accent); }
+    .etm-sw:focus-visible { outline: 2px solid var(--etm-accent); outline-offset: 2px; }
+    .etm-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; padding: 6px 6px 0; border-top: 1px solid var(--etm-line); color: var(--etm-muted); font-size: 11px; }
+    .etm-empty { padding: 18px 8px; text-align: center; color: var(--etm-muted); }
+    .etm-err { color: var(--etm-danger); }
+    .etm-toast {
+        position: absolute; inset-inline: 8px; bottom: 34px; padding: 6px 10px; border-radius: 6px; font-size: 12px;
+        background: var(--etm-fg); color: var(--etm-bg); opacity: 0; transform: translateY(4px); transition: opacity .18s, transform .18s; pointer-events: none;
+    }
+    .etm-toast.etm-show { opacity: 1; transform: none; }
+    .etm-fltoast {
+        position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 2147483647; padding: 6px 12px; border-radius: 6px;
+        font-size: 12px; background: var(--etm-fg); color: var(--etm-bg); box-shadow: 0 2px 10px rgba(0,0,0,.3); pointer-events: none;
+    }
+    .etm-backdrop { position: fixed; inset: 0; z-index: 2147483646; background: rgba(0, 0, 0, .35); display: flex; align-items: center; justify-content: center; }
+    .etm-dialog {
+        position: relative; width: 360px; max-width: calc(100vw - 32px); max-height: calc(100vh - 64px); display: flex; flex-direction: column;
+        background: var(--etm-bg); border-radius: 8px; box-shadow: 0 2px 14px rgba(0,0,0,.35), 0 0 0 1px var(--etm-line); overflow: hidden;
+    }
+    .etm-dh { display: flex; align-items: center; gap: 8px; padding: 10px 8px 6px 12px; }
+    .etm-dh h4 { flex: 1; min-width: 0; margin: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .etm-dc { padding: 4px 12px 14px; overflow-y: auto; }
+    .etm-hint { color: var(--etm-muted); font-size: 12px; margin: 0 0 8px; }
+    .etm-form { display: flex; gap: 6px; margin-bottom: 10px; }
+    .etm-form .etm-input { flex: 1; min-width: 0; }
+    .etm-select { padding: 0 4px; }
+    .etm-btn { height: 28px; border: 0; border-radius: 4px; padding: 0 12px; font: inherit; font-weight: 600; cursor: pointer; background: var(--etm-accent); color: var(--etm-on-accent); }
+    .etm-btn:hover { filter: brightness(1.08); }
+    .etm-btn:focus-visible { outline: 2px solid var(--etm-accent); outline-offset: 2px; }
+    .etm-sub { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--etm-muted); margin: 10px 0 4px; font-weight: 600; }
+    .etm-group { margin-bottom: 10px; }
+    .etm-ghead { display: flex; align-items: center; gap: 4px; padding-inline-start: 6px; font-weight: 600; }
+    .etm-ghead span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .etm-rule { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 2px 0 6px; border-radius: 4px; }
+    .etm-rule:hover { background: var(--etm-hover); }
+    .etm-rule .etm-rname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .etm-state { font-size: 12px; }
+    .etm-state.etm-on { color: var(--etm-ok); }
+    .etm-state.etm-offs { color: var(--etm-danger); }
+    .etm-rule .etm-ib { width: 24px; height: 24px; }
+    `;
+    function ensureStyle(doc) {
+        let st = doc.getElementById(STYLE_ID);
+        if (!st) {
+            st = doc.createElementNS('http://www.w3.org/1999/xhtml', 'style');
+            st.id = STYLE_ID;
+            doc.documentElement.appendChild(st);
+        }
+        st.textContent = STYLE_CSS;
+    }
+
+    // Çizgi simgeler (currentColor)
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    const ICON_DEFS = {
+        power: ['M8 1.8v5.4', 'M4.6 3.9a5.4 5.4 0 1 0 6.8 0'],
+        sort:  ['M4.5 2.5v11', 'M2.4 11.4l2.1 2.1 2.1-2.1', 'M11.5 13.5v-11', 'M9.4 4.6l2.1-2.1 2.1 2.1'],
+        more:  [{c: [3.5, 8, 0.8]}, {c: [8, 8, 0.8]}, {c: [12.5, 8, 0.8]}],
+        globe: [{c: [8, 8, 6]}, 'M2 8h12', 'M8 2c2 1.8 2.9 3.8 2.9 6S10 12.2 8 14c-2-1.8-2.9-3.8-2.9-6S6 3.8 8 2z'],
+        gear:  [{c: [8, 8, 2]}, 'M8 1.6l1 1.7 2-.3.6 1.9 1.8 1-.9 1.8.9 1.8-1.8 1-.6 1.9-2-.3-1 1.7-1-1.7-2 .3-.6-1.9-1.8-1 .9-1.8-.9-1.8 1.8-1 .6-1.9 2 .3z'],
+        trash: ['M2.5 4.5h11', 'M6 4.5V3h4v1.5', 'M4 4.5l.7 8.5h6.6l.7-8.5', 'M6.7 7v4', 'M9.3 7v4'],
+        close: ['M3.5 3.5l9 9', 'M12.5 3.5l-9 9']
+    };
+    function icon(doc, name) {
+        const svg = doc.createElementNS(SVG_NS, 'svg');
+        svg.setAttribute('viewBox', '0 0 16 16');
+        svg.setAttribute('aria-hidden', 'true');
+        for (const part of ICON_DEFS[name]) {
+            if (typeof part === 'string') {
+                const p = doc.createElementNS(SVG_NS, 'path');
+                p.setAttribute('d', part);
+                svg.appendChild(p);
+            } else {
+                const c = doc.createElementNS(SVG_NS, 'circle');
+                c.setAttribute('cx', part.c[0]);
+                c.setAttribute('cy', part.c[1]);
+                c.setAttribute('r', part.c[2]);
+                if (part.c[2] < 1) c.setAttribute('fill', 'currentColor');
+                svg.appendChild(c);
+            }
+        }
+        return svg;
+    }
+    function gripIcon(doc) {
+        const svg = doc.createElementNS(SVG_NS, 'svg');
+        svg.setAttribute('viewBox', '0 0 10 14');
+        svg.setAttribute('aria-hidden', 'true');
+        for (const y of [3, 7, 11]) {
+            for (const x of [3, 7]) {
+                const c = doc.createElementNS(SVG_NS, 'circle');
+                c.setAttribute('cx', x);
+                c.setAttribute('cy', y);
+                c.setAttribute('r', 1);
+                svg.appendChild(c);
+            }
+        }
+        return svg;
+    }
+
     const H = {
-        // Element creator
-        el: (doc, tag, props = {}, style = '', children = []) => {
+        // props özellik, attrs öznitelik olarak atanır
+        el: (doc, tag, props = {}, attrs = {}, children = []) => {
             const el = doc.createElementNS('http://www.w3.org/1999/xhtml', tag);
             Object.entries(props).forEach(([k, v]) => el[k] = v);
-            if (style) el.style.cssText = style;
-            children.forEach(c => el.appendChild(c));
+            Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+            children.forEach(c => c && el.appendChild(c));
             return el;
         },
 
-        // XUL element creator
         xul: (doc, tag, attrs = {}) => {
             const el = doc.createXULElement(tag);
             Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
             return el;
         },
 
-        // Button creator
-        btn: (doc, {text, icon, color, onClick, style = '', title}) => {
-            const btn = H.el(doc, 'button', {
-                textContent: icon || text,
-                title: title || text
-            }, STYLES.BUTTON(color) + style);
-
-            btn.addEventListener('mouseenter', () => {
-                btn.style.transform = 'translateY(-1px)';
-                btn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
-            });
-            btn.addEventListener('mouseleave', () => {
-                btn.style.transform = 'translateY(0)';
-                btn.style.boxShadow = 'none';
-            });
-            btn.addEventListener('click', onClick);
-            return btn;
+        iconBtn: (doc, name, label, onClick, extra = {}) => {
+            const b = H.el(doc, 'button', {className: 'etm-ib', type: 'button'}, {title: label, 'aria-label': label, ...extra}, [icon(doc, name)]);
+            if (onClick) b.addEventListener('click', onClick);
+            return b;
         },
 
-        // Close button
-        closeBtn: (doc, onClose) => {
-            const btn = H.el(doc, 'button', {textContent: '×'}, STYLES.CLOSE_BTN);
-            btn.addEventListener('click', onClose);
-            ['mouseenter', 'mouseleave'].forEach((e, i) => {
-                btn.addEventListener(e, () => {
-                    btn.style.background = i ? 'none' : 'rgba(255,255,255,0.2)';
-                });
-            });
-            return btn;
-        },
-
-        // Hover effect
-        hover: (el, enter, leave) => {
-            el.addEventListener('mouseenter', enter);
-            el.addEventListener('mouseleave', leave);
-        },
-
-        // Wait
         wait: (ms) => new Promise(r => setTimeout(r, ms)),
 
-        // Clean domain
         cleanDomain: (d) => d.replace(/^https?:\/\//, '').split('/')[0]
     };
 
-    // ===========================================
-    // MAIN MANAGER
-    // ===========================================
     window.ExtensionToggleManager = {
         button: null,
         panel: null,
@@ -117,11 +218,11 @@
         customOrder: [],
         initialized: false,
         draggedIndex: null,
+        sortMode: 0,   // 0 özel sıra, 1 isme göre, 2 duruma göre
 
-        // =============== INIT ===============
+        // INIT
         async init() {
             if (this.initialized) return;
-            console.log('🚀 Extension Toggle Manager - Optimized');
 
             try {
                 this.loadSettings();
@@ -135,81 +236,41 @@
             }
         },
 
-        // =============== BUTTON ===============
+        // BUTTON
         addButton() {
-            const win = Services.wm.getMostRecentWindow('navigator:browser');
-            if (!win) return;
-            const doc = win.document;
+            const doc = Services.wm.getMostRecentWindow('navigator:browser')?.document;
+            if (!doc) return;
 
             doc.getElementById('enhanced-ext-toggle-btn')?.remove();
+            try { CustomizableUI.destroyWidget('enhanced-ext-toggle-btn'); } catch (e) {}
 
-            // Try CustomizableUI
-            if (typeof CustomizableUI !== 'undefined') {
-                try {
-                    CustomizableUI.destroyWidget('enhanced-ext-toggle-btn');
-                } catch (e) {}
-
-                CustomizableUI.createWidget({
-                    id: 'enhanced-ext-toggle-btn',
-                    type: 'custom',
-                    defaultArea: CustomizableUI.AREA_NAVBAR,
-                    tooltiptext: 'Extension Manager\nSol: Panel | Orta: Toggle | Sağ: Menü',
-                    onBuild: (aDoc) => {
-                        const btn = H.xul(aDoc, 'toolbarbutton', {
-                            id: 'enhanced-ext-toggle-btn',
-                            class: 'toolbarbutton-1 chromeclass-toolbar-additional',
-                            label: 'Extensions+',
-                            removable: 'true',
-                            'cui-areatype': 'toolbar'
-                        });
-
-                        const isDark = aDoc.documentElement.hasAttribute('lwtheme-brighttext') ||
-                            window.matchMedia('(prefers-color-scheme: dark)').matches;
-                        btn.style.listStyleImage = `url(${isDark ? ICONS.DARK : ICONS.LIGHT})`;
-
-                        btn.addEventListener('click', (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            const actions = [
-                                () => this.togglePanel(btn),
-                                () => this.quickToggleAll(),
-                                () => this.showContextMenu(e)
-                            ];
-                            actions[e.button]?.();
-                        });
-
-                        return btn;
-                    }
-                });
-
-                this.button = doc.getElementById('enhanced-ext-toggle-btn');
-                console.log('✅ CustomizableUI widget created');
-                return;
-            }
-
-            // Fallback
-            const button = H.xul(doc, 'toolbarbutton', {
+            CustomizableUI.createWidget({
                 id: 'enhanced-ext-toggle-btn',
-                class: 'toolbarbutton-1 chromeclass-toolbar-additional',
-                label: 'Extensions+',
-                tooltiptext: 'Extension Manager',
-                removable: 'true',
-                'cui-areatype': 'toolbar'
+                type: 'custom',
+                defaultArea: CustomizableUI.AREA_NAVBAR,
+                tooltiptext: 'Uzantı yöneticisi\nSol tık: panel · Orta tık: tümünü aç/kapat · Sağ tık: menü',
+                onBuild: (aDoc) => {
+                    const btn = H.xul(aDoc, 'toolbarbutton', {
+                        id: 'enhanced-ext-toggle-btn',
+                        class: 'toolbarbutton-1 chromeclass-toolbar-additional',
+                        label: 'Extensions+',
+                        removable: 'true',
+                        'cui-areatype': 'toolbar'
+                    });
+                    btn.style.listStyleImage = BTN_ICON;
+                    btn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        [() => this.togglePanel(btn), () => this.quickToggleAll(), () => this.showContextMenu(e)][e.button]?.();
+                    });
+                    return btn;
+                }
             });
 
-            button.style.listStyleImage = `url(${ICONS.LIGHT})`;
-            button.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                [() => this.togglePanel(button), () => this.quickToggleAll(), () => this.showContextMenu(e)][e.button]?.();
-            });
-
-            doc.getElementById('nav-bar')?.appendChild(button);
-            this.button = button;
-            console.log('✅ Fallback button added');
+            this.button = doc.getElementById('enhanced-ext-toggle-btn');
         },
 
-        // =============== PANEL ===============
+        // PANEL
         togglePanel(anchor) {
             if (this.panel?.state === 'open') {
                 this.panel.hidePopup();
@@ -220,80 +281,80 @@
 
         async showExtensionPanel(anchor) {
             const doc = anchor.ownerDocument;
+            ensureStyle(doc);
             this.panel?.remove();
 
-            // Create panel
             this.panel = H.xul(doc, 'panel', {
                 id: 'enhanced-ext-panel',
                 type: 'arrow',
+                class: 'panel-no-padding',
                 flip: 'both',
                 position: 'bottomcenter topright'
             });
-            this.panel.style.cssText = 'z-index:2147483647;position:relative';
+            this.panel.style.setProperty('--arrowpanel-padding', '0');
 
-            // Container
-            const container = H.el(doc, 'div', {}, STYLES.CONTAINER);
+            const search = H.el(doc, 'input',
+                {id: 'etm-search', className: 'etm-search', type: 'search', placeholder: 'Uzantılarda ara', autocomplete: 'off'},
+                {'aria-label': 'Uzantılarda ara'});
+            search.addEventListener('input', () => this.renderExtensions());
 
-            // Header
-            const header = H.el(doc, 'div', {}, STYLES.HEADER, [
-                H.el(doc, 'h3', {textContent: '🧩 Extensions'}, 'margin:0 0 1px 0;font-size:17px;font-weight:600'),
-                this.createSearchRow(doc)
+            const allBtn = H.iconBtn(doc, 'power', 'Tümünü kapat', () => this.quickToggleAll(), {id: 'etm-all'});
+            const sortBtn = H.iconBtn(doc, 'sort', 'Sırala', () => this.openSortMenu(sortBtn), {id: 'etm-sort-btn', 'aria-haspopup': 'menu'});
+            const moreBtn = H.iconBtn(doc, 'more', 'Diğer işlemler', () => this.openMoreMenu(moreBtn), {id: 'etm-more-btn', 'aria-haspopup': 'menu'});
+            const bar = H.el(doc, 'div', {className: 'etm-bar'}, {}, [search, allBtn, sortBtn, moreBtn]);
+
+            const list = H.el(doc, 'div', {id: 'ext-list-container', className: 'etm-list'}, {role: 'list'});
+            const foot = H.el(doc, 'div', {className: 'etm-foot'}, {}, [
+                H.el(doc, 'span', {id: 'etm-count'}),
+                H.el(doc, 'span', {id: 'etm-sortnote'})
             ]);
+            const toast = H.el(doc, 'div', {id: 'etm-toast', className: 'etm-toast'}, {role: 'status'});
 
-            // List
-            const list = H.el(doc, 'div', {id: 'ext-list-container'}, STYLES.LIST);
-
-            // Footer buttons
-            const footerBtns = [
-                {text: 'Tümünü Kapat', color: '#f44336', action: () => this.toggleAll(false)},
-                {text: 'Tümünü Aç', color: '#4caf50', action: () => this.toggleAll(true)},
-                {text: 'Domain Kuralları', color: '#2196f3', action: () => this.openDomainRulesDialog()}
-            ];
-
-            const footer = H.el(doc, 'div', {}, STYLES.FOOTER);
-            footerBtns.forEach(b => footer.appendChild(H.btn(doc, {text: b.text, color: b.color, onClick: b.action})));
-
-            // Settings footer
-            const settingsBtns = [
-                {icon: '📤', text: 'Dışa Aktar', color: '#607d8b', action: () => this.exportSettings()},
-                {icon: '📥', text: 'İçe Aktar', color: '#4caf50', action: () => this.importSettings()},
-                {icon: '🔄', text: 'Sıfırla', color: '#ff9800', action: () => this.resetSettings()}
-            ];
-
-            const settingsFooter = H.el(doc, 'div', {}, STYLES.SETTINGS_FOOTER);
-            settingsBtns.forEach(b => settingsFooter.appendChild(H.btn(doc, {text: `${b.icon} ${b.text}`, color: b.color, onClick: b.action})));
-
-            // Assemble
-            [header, list, footer, settingsFooter].forEach(el => container.appendChild(el));
-            this.panel.appendChild(container);
+            this.panel.appendChild(H.el(doc, 'div', {className: 'etm'}, {}, [bar, list, foot, toast]));
             doc.documentElement.appendChild(this.panel);
 
             await this.loadExtensions();
+            this.panel.addEventListener('popupshown', () => search.focus(), {once: true});
             this.panel.openPopup(anchor, 'after_end', 0, 0, false, false);
         },
 
-        createSearchRow(doc) {
-            const row = H.el(doc, 'div', {}, STYLES.SEARCH_ROW);
-
-            const search = H.el(doc, 'input', {
-                id: 'ext-search-input',
-                type: 'text',
-                placeholder: 'Extension ara...'
-            }, STYLES.INPUT);
-            search.addEventListener('input', () => this.renderExtensions());
-
-            const sort = H.el(doc, 'select', {id: 'ext-sort-select'}, STYLES.SELECT);
-            ['Özel Sıra', 'İsme Göre', 'Duruma Göre'].forEach(opt => {
-                sort.appendChild(H.el(doc, 'option', {textContent: opt}));
-            });
-            sort.addEventListener('change', () => this.renderExtensions());
-
-            row.appendChild(search);
-            row.appendChild(sort);
-            return row;
+        // Yerel menüler (panelin dışına taşabilir)
+        newMenu(doc, id) {
+            doc.getElementById(id)?.remove();
+            const menu = H.xul(doc, 'menupopup', {id});
+            doc.documentElement.appendChild(menu);
+            return menu;
         },
 
-        // =============== EXTENSIONS ===============
+        openSortMenu(anchor) {
+            const doc = anchor.ownerDocument;
+            const menu = this.newMenu(doc, 'etm-sort-menu');
+            SORT_LABELS.forEach((label, i) => {
+                const mi = H.xul(doc, 'menuitem', {label, type: 'radio', name: 'etm-sort', checked: i === this.sortMode ? 'true' : 'false'});
+                mi.addEventListener('command', () => { this.sortMode = i; this.renderExtensions(); });
+                menu.appendChild(mi);
+            });
+            menu.openPopup(anchor, 'after_end');
+        },
+
+        openMoreMenu(anchor) {
+            const doc = anchor.ownerDocument;
+            const menu = this.newMenu(doc, 'etm-more-menu');
+            const add = (label, cmd) => {
+                const mi = H.xul(doc, 'menuitem', {label});
+                mi.addEventListener('command', cmd);
+                menu.appendChild(mi);
+            };
+            add('Domain kuralları…', () => this.openDomainRulesDialog());
+            menu.appendChild(H.xul(doc, 'menuseparator'));
+            add('Ayarları dışa aktar', () => this.exportSettings());
+            add('Ayarları içe aktar…', () => this.importSettings());
+            menu.appendChild(H.xul(doc, 'menuseparator'));
+            add('Ayarları sıfırla…', () => this.resetSettings());
+            menu.openPopup(anchor, 'after_end');
+        },
+
+        // EXTENSIONS
         async loadExtensions() {
             try {
                 const AM = await this.getAddonManager();
@@ -307,7 +368,6 @@
                     !a.isSystem && a.type === 'extension' && a.id !== 'extension-toggle@userchrome.js'
                 );
 
-                console.log(`${this.extensions.length} extension yüklendi`);
                 this.renderExtensions();
             } catch (e) {
                 console.error('Load error:', e);
@@ -316,19 +376,12 @@
         },
 
         async getAddonManager() {
-            const methods = [
-                () => ChromeUtils.import('resource://gre/modules/AddonManager.jsm').AddonManager,
-                () => ChromeUtils.importESModule("resource://gre/modules/AddonManager.sys.mjs").AddonManager,
-                () => Components.utils.import('resource://gre/modules/AddonManager.jsm', {}).AddonManager
-            ];
+            try { return ChromeUtils.importESModule('resource://gre/modules/AddonManager.sys.mjs').AddonManager; }
+            catch (e) { return null; }
+        },
 
-            for (const method of methods) {
-                try {
-                    const AM = method();
-                    if (AM) return AM;
-                } catch (e) {}
-            }
-            return null;
+        currentSearch(doc) {
+            return doc.getElementById('etm-search')?.value.trim().toLowerCase() || '';
         },
 
         renderExtensions() {
@@ -339,94 +392,107 @@
             if (!container) return;
 
             const filtered = this.getFilteredExtensions();
-            container.innerHTML = filtered.length ? '' :
-                '<div style="text-align:center;padding:30px;color:#666">Extension bulunamadı</div>';
-
+            container.replaceChildren();
+            if (!filtered.length) {
+                container.appendChild(H.el(doc, 'div', {
+                    className: 'etm-empty',
+                    textContent: this.extensions.length ? 'Eşleşen uzantı yok' : 'Uzantı bulunamadı'
+                }));
+            }
             filtered.forEach((ext, i) => container.appendChild(this.createExtItem(doc, ext, i)));
+
+            const active = this.extensions.filter(e => e.isActive).length;
+            const count = doc.getElementById('etm-count');
+            if (count) count.textContent = `${active} / ${this.extensions.length} etkin`;
+            const note = doc.getElementById('etm-sortnote');
+            if (note) note.textContent = this.sortMode === 0 ? '' : SORT_LABELS[this.sortMode];
+            const allBtn = doc.getElementById('etm-all');
+            if (allBtn) {
+                const label = active > 0 ? 'Tümünü kapat' : 'Tümünü aç';
+                allBtn.setAttribute('title', label);
+                allBtn.setAttribute('aria-label', label);
+            }
+        },
+
+        hasDomainRules(extId) {
+            return Object.values(this.domainRules).some(r => r && r[extId] !== undefined);
         },
 
         createExtItem(doc, ext, index) {
-            const item = H.el(doc, 'div', {
-                className: 'ext-item',
-                draggable: true
-            }, STYLES.EXT_ITEM(ext.isActive));
-            item.dataset.id = ext.id;
+            const canDrag = this.sortMode === 0 && !this.currentSearch(doc);
+            const row = H.el(doc, 'div',
+                {className: 'etm-row' + (ext.isActive ? '' : ' etm-off'), draggable: canDrag},
+                {role: 'listitem'});
+            row.dataset.id = ext.id;
 
-            // Drag handle
-            const drag = H.el(doc, 'div', {textContent: '⋮⋮'}, 'width:20px;margin-right:12px;opacity:0.4;cursor:move;font-size:12px;color:#666;transition:opacity 0.3s');
+            const grip = H.el(doc, 'span', {className: 'etm-grip'}, {title: 'Sırayı değiştirmek için sürükle'}, [gripIcon(doc)]);
+            if (!canDrag) grip.style.display = 'none';
 
-            // Switch
-            const switchCont = H.el(doc, 'div', {}, STYLES.SWITCH(ext.isActive));
-            const knob = H.el(doc, 'div', {}, STYLES.SWITCH_KNOB(ext.isActive));
-            switchCont.appendChild(knob);
+            // Simge yoksa ya da yüklenemezse baş harfli renkli kutu
+            const letter = () => {
+                let h = 0;
+                for (const ch of ext.name) h = (h * 31 + ch.charCodeAt(0)) % 360;
+                const el = H.el(doc, 'span', {className: 'etm-ico', textContent: (ext.name[0] || '?').toUpperCase()});
+                el.style.background = `hsl(${h} 42% 38%)`;
+                return el;
+            };
+            let ico;
+            if (ext.iconURL) {
+                ico = H.el(doc, 'img', {className: 'etm-ico', src: ext.iconURL, alt: ''});
+                ico.addEventListener('error', () => ico.replaceWith(letter()), {once: true});
+            } else {
+                ico = letter();
+            }
 
-            // Info
-            const info = H.el(doc, 'div', {}, 'flex:1;min-width:0;margin-right:8px', [
-                H.el(doc, 'div', {textContent: ext.name}, 'font-weight:600;font-size:14px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#333'),
-                H.el(doc, 'div', {textContent: `v${ext.version}`}, 'font-size:11px;color:#888')
-            ]);
+            const tip = [`${ext.name}${ext.version ? ' v' + ext.version : ''}`, ext.description ? String(ext.description).slice(0, 160) : '']
+                .filter(Boolean).join('\n');
+            const name = H.el(doc, 'span', {className: 'etm-name', textContent: ext.name}, {title: tip});
+            const dot = this.hasDomainRules(ext.id)
+                ? H.el(doc, 'span', {className: 'etm-dot'}, {title: 'Bu uzantı için domain kuralı var'})
+                : null;
 
-            // Buttons
-            const domainBtn = H.el(doc, 'button', {textContent: '🌐', title: 'Domain kuralları'}, STYLES.ICON_BTN('#667eea', true));
-            domainBtn.addEventListener('click', e => {
+            const domainBtn = H.iconBtn(doc, 'globe', 'Domain kuralları', e => {
                 e.stopPropagation();
                 this.openDomainDialog(ext);
             });
-
-            const settingsBtn = H.el(doc, 'button', {textContent: '⚙️', title: 'Uzantı ayarları'}, STYLES.ICON_BTN('#4caf50', ext.isActive));
-            settingsBtn.addEventListener('click', async e => {
+            const settingsBtn = H.iconBtn(doc, 'gear', 'Uzantı ayarları', async e => {
                 e.stopPropagation();
                 await this.openExtensionSettings(ext);
             });
+            if (!ext.isActive) settingsBtn.style.display = 'none';   // kapalı uzantının ayarına ulaşılamaz
+            const acts = H.el(doc, 'span', {className: 'etm-acts'}, {}, [domainBtn, settingsBtn]);
 
-            // Status
-            const status = H.el(doc, 'span', {textContent: ext.isActive ? 'AÇIK' : 'KAPALI'},
-                `padding:3px 8px;border-radius:12px;font-size:10px;font-weight:bold;background:${ext.isActive ? '#e8f5e9' : '#ffebee'};color:${ext.isActive ? '#2e7d32' : '#c62828'};min-width:45px;text-align:center`
-            );
+            const sw = H.el(doc, 'button', {className: 'etm-sw', type: 'button'}, {
+                role: 'switch',
+                'aria-checked': String(!!ext.isActive),
+                'aria-label': ext.name,
+                title: ext.isActive ? 'Kapat' : 'Aç'
+            });
 
-            // Events
-            H.hover(item,
-                () => {
-                    item.style.transform = 'translateX(4px)';
-                    item.style.boxShadow = '0 3px 12px rgba(0,0,0,0.15)';
-                    [domainBtn, settingsBtn, drag].forEach(el => el.style.opacity = ext.isActive || el === domainBtn ? '1' : '0.8');
-                },
-                () => {
-                    item.style.transform = 'translateX(0)';
-                    item.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-                    [domainBtn, settingsBtn, drag].forEach(el => el.style.opacity = el === drag ? '0.4' : '0');
-                }
-            );
-
-            const toggle = async(e) => {
+            const toggle = async e => {
                 e?.stopPropagation();
                 await this.toggleExtension(ext.id, !ext.isActive);
             };
+            row.addEventListener('click', toggle);
+            sw.addEventListener('click', toggle);
 
-            item.addEventListener('click', toggle);
-            switchCont.addEventListener('click', e => {
-                e.stopPropagation();
-                toggle();
-            });
+            row.addEventListener('dragstart', e => this.handleDragStart(e, index));
+            row.addEventListener('dragover', e => this.handleDragOver(e));
+            row.addEventListener('dragleave', () => row.classList.remove('etm-over'));
+            row.addEventListener('drop', e => this.handleDrop(e, index));
+            row.addEventListener('dragend', () => this.handleDragEnd());
 
-            // Drag & Drop
-            item.addEventListener('dragstart', e => this.handleDragStart(e, index));
-            item.addEventListener('dragover', e => this.handleDragOver(e));
-            item.addEventListener('drop', e => this.handleDrop(e, index));
-            item.addEventListener('dragend', () => this.handleDragEnd());
-
-            [drag, switchCont, info, domainBtn, settingsBtn, status].forEach(el => item.appendChild(el));
-            return item;
+            [grip, ico, name, dot, acts, sw].forEach(el => el && row.appendChild(el));
+            return row;
         },
 
         getFilteredExtensions() {
             const doc = this.panel?.ownerDocument;
             if (!doc) return this.extensions;
 
-            const search = doc.getElementById('ext-search-input')?.value.toLowerCase() || '';
-            const sort = doc.getElementById('ext-sort-select')?.selectedIndex || 0;
+            const search = this.currentSearch(doc);
 
-            let filtered = this.extensions.filter(e =>
+            const filtered = this.extensions.filter(e =>
                 e.name.toLowerCase().includes(search) ||
                 (e.description?.toLowerCase().includes(search))
             );
@@ -437,13 +503,13 @@
                     return (ai === -1 ? Infinity : ai) - (bi === -1 ? Infinity : bi);
                 },
                 (a, b) => a.name.localeCompare(b.name, 'tr'),
-                (a, b) => (b.isActive - a.isActive)
+                (a, b) => (b.isActive - a.isActive) || a.name.localeCompare(b.name, 'tr')
             ];
 
-            return filtered.sort(sorters[sort]);
+            return filtered.sort(sorters[this.sortMode] || sorters[0]);
         },
 
-        // =============== TOGGLE ===============
+        // TOGGLE
         async toggleExtension(id, enable) {
             try {
                 const AM = await this.getAddonManager();
@@ -476,9 +542,13 @@
             await this.toggleAll(!hasEnabled);
         },
 
-        // =============== EXTENSION SETTINGS ===============
+        // EXTENSION SETTINGS
         async openExtensionSettings(ext) {
-            console.log(`⚙️ ${ext.name} ayarları açılıyor...`);
+            // Önce kendi panelimizi kapat: uzantının kendi açılır penceresi (sabitlenmiş düğme) altında kalmasın
+            if (this.panel?.state === 'open') {
+                this.panel.hidePopup();
+                await H.wait(100);
+            }
 
             try {
                 if (this.tryToolbarButton(ext)) return;
@@ -496,7 +566,6 @@
 
                 for (const btn of btns) {
                     if (btn.getAttribute('data-extensionid') === ext.id && btn.offsetWidth > 0) {
-                        console.log(`✅ ${ext.name} toolbar'da bulundu`);
                         btn.click();
                         return true;
                     }
@@ -557,116 +626,79 @@
             win.BrowserOpenAddonsMgr(`addons://detail/${encodeURIComponent(ext.id)}`);
         },
 
-        // =============== DOMAIN RULES ===============
+        // DOMAIN RULES (pencereler)
         openDomainDialog(ext) {
             const win = Services.wm.getMostRecentWindow('navigator:browser');
             const doc = win.document;
 
-            const {backdrop, content} = this.createModal(doc, `Domain Kuralları - ${ext.name}`, {width: '480px'}, '#667eea');
+            const {content} = this.createModal(doc, `Domain kuralları · ${ext.name}`);
 
-            // Current domain
             const current = this.getCurrentDomain();
-            content.appendChild(H.el(doc, 'div', {
-                innerHTML: `<strong>🌐 Aktif Domain:</strong> ${current || 'Bilinmiyor'}`
-            }, 'padding:14px;background:linear-gradient(135deg,#e3f2fd,#f3e5f5);border-radius:8px;margin-bottom:18px;font-size:13px;border-left:4px solid #667eea;color:#000'));
+            content.appendChild(H.el(doc, 'p', {
+                className: 'etm-hint',
+                textContent: current ? `Açık site: ${current}` : 'Açık site yok (özel sayfa)'
+            }));
 
-            // Input group
-            const inputGroup = H.el(doc, 'div', {}, 'display:flex;gap:10px;margin-bottom:18px');
-
-            const domainInput = H.el(doc, 'input', {
-                type: 'text',
-                placeholder: 'örn: sahibinden.com',
-                value: current || ''
-            }, 'flex:1;padding:10px 14px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;transition:border-color 0.3s;color:#000;background:#fff');
-
-            ['focus', 'blur'].forEach((e, i) => {
-                domainInput.addEventListener(e, () => {
-                    domainInput.style.borderColor = i ? '#e0e0e0' : '#667eea';
-                });
-            });
-
-            const ruleSelect = H.el(doc, 'select', {}, 'padding:10px 14px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;cursor:pointer;background:white;color:#000', [
+            const input = H.el(doc, 'input',
+                {className: 'etm-input', type: 'text', placeholder: 'örn: sahibinden.com', value: current || ''},
+                {'aria-label': 'Domain'});
+            const select = H.el(doc, 'select', {className: 'etm-select'}, {'aria-label': 'Kural'}, [
                 H.el(doc, 'option', {value: 'false', textContent: 'Kapat'}),
                 H.el(doc, 'option', {value: 'true', textContent: 'Aç'})
             ]);
+            const addBtn = H.el(doc, 'button', {className: 'etm-btn', type: 'button', textContent: 'Ekle'});
 
-            const addBtn = H.btn(doc, {
-                text: 'Ekle',
-                color: '#667eea',
-                onClick: () => {
-                    const domain = domainInput.value.trim();
-                    if (domain) {
-                        this.addDomainRule(ext.id, domain, ruleSelect.value === 'true');
-                        domainInput.value = '';
-                        this.renderDomainRules(rulesList, ext.id);
-                    }
-                },
-                style: 'flex:initial;padding:10px 18px;font-size:16px'
-            });
+            const rulesList = H.el(doc, 'div', {className: 'etm-rules'});
 
-            [domainInput, ruleSelect, addBtn].forEach(el => inputGroup.appendChild(el));
+            const addRule = () => {
+                const domain = input.value.trim();
+                if (!domain) return;
+                this.addDomainRule(ext.id, domain, select.value === 'true');
+                input.value = '';
+                this.renderDomainRules(rulesList, ext.id);
+            };
+            addBtn.addEventListener('click', addRule);
+            input.addEventListener('keydown', e => { if (e.key === 'Enter') addRule(); });
 
-            // Rules list
-            const rulesList = H.el(doc, 'div', {}, 'max-height:280px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:8px;background:#fafafa;padding:8px');
-
-            content.appendChild(inputGroup);
-            content.appendChild(H.el(doc, 'h5', {textContent: 'Kayıtlı Kurallar'}, 'margin:0 0 12px 0;font-size:15px;color:#333;font-weight:600'));
+            content.appendChild(H.el(doc, 'div', {className: 'etm-form'}, {}, [input, select, addBtn]));
+            content.appendChild(H.el(doc, 'div', {className: 'etm-sub', textContent: 'Kayıtlı kurallar'}));
             content.appendChild(rulesList);
 
             this.renderDomainRules(rulesList, ext.id);
-            domainInput.focus();
+            input.focus();
+            input.select();
+        },
+
+        ruleRow(doc, label, enabled, delTitle, onDelete) {
+            const state = H.el(doc, 'span', {
+                className: 'etm-state ' + (enabled ? 'etm-on' : 'etm-offs'),
+                textContent: enabled ? 'Açık' : 'Kapalı'
+            });
+            return H.el(doc, 'div', {className: 'etm-rule'}, {}, [
+                H.el(doc, 'span', {className: 'etm-rname', textContent: label}, {title: label}),
+                state,
+                H.iconBtn(doc, 'trash', delTitle, onDelete)
+            ]);
         },
 
         renderDomainRules(container, extId) {
             const doc = container.ownerDocument;
-            container.innerHTML = '';
+            container.replaceChildren();
 
             const rules = Object.entries(this.domainRules)
                 .filter(([_, r]) => r[extId] !== undefined)
                 .map(([domain, r]) => ({domain, enabled: r[extId]}));
 
             if (rules.length === 0) {
-                container.innerHTML = '<div style="text-align:center;color:#666;padding:32px;font-size:14px"><div style="font-size:32px;margin-bottom:12px">🌐</div><div>Henüz kural eklenmemiş</div></div>';
+                container.appendChild(H.el(doc, 'div', {className: 'etm-empty', textContent: 'Henüz kural yok'}));
                 return;
             }
 
             rules.forEach(r => {
-                const item = H.el(doc, 'div', {}, `display:flex;justify-content:space-between;align-items:center;padding:12px 16px;margin-bottom:8px;background:white;border-radius:8px;border-left:4px solid ${r.enabled ? '#4caf50' : '#f44336'};box-shadow:0 1px 3px rgba(0,0,0,0.1);transition:transform 0.2s`);
-
-                H.hover(item,
-                    () => item.style.transform = 'translateX(4px)',
-                    () => item.style.transform = 'translateX(0)'
-                );
-
-                const info = H.el(doc, 'div', {}, '', [
-                    H.el(doc, 'div', {textContent: r.domain}, 'font-weight:600;font-size:14px;color:#333'),
-                    H.el(doc, 'div', {textContent: r.enabled ? '✅ Açık' : '❌ Kapalı'}, `font-size:12px;color:${r.enabled ? '#4caf50' : '#f44336'};margin-top:2px`)
-                ]);
-
-                const delBtn = H.el(doc, 'button', {
-                    textContent: 'Sil',
-                    title: 'Kuralı sil'
-                }, 'background:none;color:#f44336;border:1px solid #f44336;border-radius:4px;padding:4px 10px;font-size:12px;font-weight:600;cursor:pointer;transition:all 0.2s');
-
-                delBtn.addEventListener('click', () => {
+                container.appendChild(this.ruleRow(doc, r.domain, r.enabled, 'Kuralı sil', () => {
                     this.removeDomainRule(extId, r.domain);
                     this.renderDomainRules(container, extId);
-                });
-
-                H.hover(delBtn,
-                    () => {
-                        delBtn.style.background = '#f44336';
-                        delBtn.style.color = 'white';
-                    },
-                    () => {
-                        delBtn.style.background = 'none';
-                        delBtn.style.color = '#f44336';
-                    }
-                );
-
-                item.appendChild(info);
-                item.appendChild(delBtn);
-                container.appendChild(item);
+                }));
             });
         },
 
@@ -674,101 +706,44 @@
             const win = Services.wm.getMostRecentWindow('navigator:browser');
             const doc = win.document;
 
-            const {backdrop, content} = this.createModal(doc, '🌐 Tüm Domain Kuralları', {width: '550px'}, '#2196f3');
-            content.style.maxHeight = '500px';
-            content.style.overflowY = 'auto';
+            const {content} = this.createModal(doc, 'Domain kuralları');
+            this.renderAllRules(content, win);
+        },
 
-            if (Object.keys(this.domainRules).length === 0) {
-                content.innerHTML = '<div style="text-align:center;color:#666;padding:48px"><div style="font-size:48px;margin-bottom:16px">🌐</div><h3 style="margin:0 0 8px 0;color:#333">Henüz domain kuralı eklenmemiş</h3></div>';
+        renderAllRules(content, win) {
+            const doc = content.ownerDocument;
+            content.replaceChildren();
+
+            const domains = Object.entries(this.domainRules).filter(([, rules]) => rules && Object.keys(rules).length);
+            if (!domains.length) {
+                content.appendChild(H.el(doc, 'div', {className: 'etm-empty', textContent: 'Henüz domain kuralı yok'}));
                 return;
             }
 
-            Object.entries(this.domainRules).forEach(([domain, rules]) => {
-                const section = H.el(doc, 'div', {}, 'margin-bottom:24px;padding:16px;background:#f8f9fa;border-radius:12px;border-left:4px solid #667eea');
-
-                const header = H.el(doc, 'div', {}, 'display:flex;justify-content:space-between;align-items:center;margin-bottom:12px');
-                
-                const domainTitle = H.el(doc, 'h5', {textContent: `🌐 ${domain}`}, 'margin:0;color:#333;font-size:16px;font-weight:600');
-                
-                const deleteDomainBtn = H.el(doc, 'button', {
-                    textContent: 'Sil',
-                    title: `${domain} kurallarını sil`
-                }, 'background:none;color:#f44336;border:1px solid #f44336;border-radius:4px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;transition:all 0.2s');
-
-                deleteDomainBtn.addEventListener('click', () => {
-                    if (win.confirm(`${domain} domain kuralları silinecek. Emin misiniz?`)) {
-                        delete this.domainRules[domain];
-                        this.saveSettings();
-                        backdrop.remove();
-                        setTimeout(() => this.openDomainRulesDialog(), 100);
-                        this.showNotification(`${domain} kuralları silindi`);
-                    }
-                });
-
-                H.hover(deleteDomainBtn,
-                    () => {
-                        deleteDomainBtn.style.background = '#f44336';
-                        deleteDomainBtn.style.color = 'white';
-                    },
-                    () => {
-                        deleteDomainBtn.style.background = 'none';
-                        deleteDomainBtn.style.color = '#f44336';
-                    }
-                );
-
-                header.appendChild(domainTitle);
-                header.appendChild(deleteDomainBtn);
-
-                section.appendChild(header);
+            domains.forEach(([domain, rules]) => {
+                const head = H.el(doc, 'div', {className: 'etm-ghead'}, {}, [
+                    H.el(doc, 'span', {textContent: domain}, {title: domain}),
+                    H.iconBtn(doc, 'trash', 'Bu site için tüm kuralları sil', () => {
+                        if (win.confirm(`${domain} için tüm kurallar silinsin mi?`)) {
+                            delete this.domainRules[domain];
+                            this.saveSettings();
+                            this.renderAllRules(content, win);
+                            this.showNotification(`${domain} kuralları silindi`);
+                        }
+                    })
+                ]);
+                const group = H.el(doc, 'div', {className: 'etm-group'}, {}, [head]);
 
                 Object.entries(rules).forEach(([extId, enabled]) => {
                     const ext = this.extensions.find(e => e.id === extId);
                     if (!ext) return;
-
-                    const ruleItem = H.el(doc, 'div', {}, 'display:flex;justify-content:space-between;align-items:center;padding:8px 12px;margin:6px 0;background:white;border-radius:8px;font-size:13px;box-shadow:0 1px 3px rgba(0,0,0,0.1);transition:transform 0.2s');
-
-                    H.hover(ruleItem,
-                        () => ruleItem.style.transform = 'translateX(4px)',
-                        () => ruleItem.style.transform = 'translateX(0)'
-                    );
-
-                    const info = H.el(doc, 'div', {}, 'flex:1', [
-                        H.el(doc, 'span', {textContent: ext.name}, 'font-weight:500;display:block;color:#333'),
-                        H.el(doc, 'span', {textContent: enabled ? '✅ Açık' : '❌ Kapalı'}, `font-weight:600;color:${enabled ? '#4caf50' : '#f44336'};font-size:12px`)
-                    ]);
-
-                    const delBtn = H.el(doc, 'button', {
-                        textContent: 'Sil',
-                        title: `${ext.name} kuralını sil`
-                    }, 'background:none;color:#ff9800;border:1px solid #ff9800;border-radius:4px;padding:4px 10px;font-size:12px;font-weight:600;cursor:pointer;transition:all 0.2s;margin-left:8px');
-
-                    delBtn.addEventListener('click', () => {
+                    group.appendChild(this.ruleRow(doc, ext.name, enabled, `${ext.name} kuralını sil`, () => {
                         this.removeDomainRule(extId, domain);
-                        if (!this.domainRules[domain] || Object.keys(this.domainRules[domain]).length === 0) {
-                            backdrop.remove();
-                            setTimeout(() => this.openDomainRulesDialog(), 100);
-                        } else {
-                            ruleItem.remove();
-                        }
-                    });
-
-                    H.hover(delBtn,
-                        () => {
-                            delBtn.style.background = '#ff9800';
-                            delBtn.style.color = 'white';
-                        },
-                        () => {
-                            delBtn.style.background = 'none';
-                            delBtn.style.color = '#ff9800';
-                        }
-                    );
-
-                    ruleItem.appendChild(info);
-                    ruleItem.appendChild(delBtn);
-                    section.appendChild(ruleItem);
+                        this.renderAllRules(content, win);
+                    }));
                 });
 
-                content.appendChild(section);
+                content.appendChild(group);
             });
         },
 
@@ -795,19 +770,18 @@
             }
         },
 
-        // =============== DOMAIN CHECKS ===============
+        // DOMAIN CHECKS
 		setupTabListeners() {
 			const gBrowser = Services.wm.getMostRecentWindow('navigator:browser').gBrowser;
-			let _domainCheckTimer = null;  // EKLE
-
+			let _domainCheckTimer = null;
 			gBrowser.tabContainer.addEventListener('TabSelect', () => {
 				setTimeout(() => this.checkCurrentDomain(), 100);
 			});
 
 			gBrowser.addProgressListener({
 				onLocationChange: () => {
-					clearTimeout(_domainCheckTimer);  // EKLE
-					_domainCheckTimer = setTimeout(() => this.checkCurrentDomain(), 200);  // DEĞİŞTİR
+					clearTimeout(_domainCheckTimer);
+					_domainCheckTimer = setTimeout(() => this.checkCurrentDomain(), 200);
 				}
 			});
 		},
@@ -864,16 +838,20 @@
             }
         },
 
-        // =============== DRAG & DROP ===============
+        // DRAG & DROP
         handleDragStart(e, index) {
             this.draggedIndex = index;
             e.dataTransfer.effectAllowed = 'move';
-            e.target.style.opacity = '0.5';
+            e.dataTransfer.setData('text/plain', String(index));   // Firefox sürüklemeyi başlatmak için veri ister
+            e.currentTarget.classList.add('etm-dragging');
         },
 
         handleDragOver(e) {
+            if (this.draggedIndex === null) return;
             e.preventDefault();
             e.dataTransfer.dropEffect = 'move';
+            this.panel?.querySelectorAll('.etm-over').forEach(r => r.classList.remove('etm-over'));
+            e.currentTarget.classList.add('etm-over');
         },
 
         handleDrop(e, targetIndex) {
@@ -884,20 +862,12 @@
                 const draggedId = filtered[this.draggedIndex].id;
                 const targetId = filtered[targetIndex].id;
 
-                const dragPos = this.customOrder.indexOf(draggedId);
+                // Özel sıra boşsa önce görünen sırayı kaydet, yoksa tek sürükleme tüm listeyi karıştırır
+                if (!this.customOrder.length) this.customOrder = filtered.map(x => x.id);
+                this.customOrder = this.customOrder.filter(id => id !== draggedId);
                 const targetPos = this.customOrder.indexOf(targetId);
-
-                if (dragPos !== -1) {
-                    this.customOrder.splice(dragPos, 1);
-                } else {
-                    this.customOrder = this.customOrder.filter(id => id !== draggedId);
-                }
-
-                if (targetPos !== -1) {
-                    this.customOrder.splice(targetPos, 0, draggedId);
-                } else {
-                    this.customOrder.push(draggedId);
-                }
+                if (targetPos === -1) this.customOrder.push(draggedId);
+                else this.customOrder.splice(targetPos, 0, draggedId);
 
                 this.saveSettings();
                 this.renderExtensions();
@@ -906,27 +876,25 @@
 
         handleDragEnd() {
             this.draggedIndex = null;
-            this.panel?.querySelectorAll('.ext-item').forEach(item => item.style.opacity = '');
+            this.panel?.querySelectorAll('.etm-dragging, .etm-over').forEach(r => r.classList.remove('etm-dragging', 'etm-over'));
         },
 
-        // =============== CONTEXT MENU ===============
+        // CONTEXT MENU
         showContextMenu(event) {
             event.preventDefault();
             const doc = event.target.ownerDocument;
 
-            doc.getElementById('ext-toggle-context')?.remove();
-
-            const menu = H.xul(doc, 'menupopup', {id: 'ext-toggle-context'});
+            const menu = this.newMenu(doc, 'ext-toggle-context');
 
             const items = [
-                {label: '📋 Panel Aç/Kapa', cmd: () => this.togglePanel(this.button)},
-                {label: '⚡ Hızlı Toggle', cmd: () => this.quickToggleAll()},
+                {label: 'Paneli aç / kapat', cmd: () => this.togglePanel(this.button)},
+                {label: 'Tümünü aç / kapat', cmd: () => this.quickToggleAll()},
                 {separator: true},
-                {label: '🌐 Domain Kuralları', cmd: () => this.openDomainRulesDialog()},
+                {label: 'Domain kuralları…', cmd: () => this.openDomainRulesDialog()},
                 {separator: true},
-                {label: '📤 Ayarları Dışa Aktar', cmd: () => this.exportSettings()},
-                {label: '📥 Ayarları İçe Aktar', cmd: () => this.importSettings()},
-                {label: '🔄 Ayarları Sıfırla', cmd: () => this.resetSettings()}
+                {label: 'Ayarları dışa aktar', cmd: () => this.exportSettings()},
+                {label: 'Ayarları içe aktar…', cmd: () => this.importSettings()},
+                {label: 'Ayarları sıfırla…', cmd: () => this.resetSettings()}
             ];
 
             items.forEach(item => {
@@ -939,11 +907,10 @@
                 }
             });
 
-            doc.documentElement.appendChild(menu);
             menu.openPopupAtScreen(event.screenX, event.screenY, true);
         },
 
-        // =============== IMPORT/EXPORT ===============
+        // IMPORT/EXPORT
         exportSettings() {
             const data = {
                 version: '2.0',
@@ -958,10 +925,10 @@
                     .getService(Ci.nsIClipboardHelper)
                     .copyString(JSON.stringify(data, null, 2));
 
-                this.showNotification('✅ Ayarlar panoya kopyalandı!');
+                this.showNotification('Ayarlar panoya kopyalandı!');
             } catch (e) {
                 console.error('Export error:', e);
-                this.showNotification('❌ Export hatası!');
+                this.showNotification('Export hatası!');
             }
         },
 
@@ -983,17 +950,17 @@
 
                 this.saveSettings();
                 await this.loadExtensions();
-                this.showNotification('✅ Ayarlar başarıyla içe aktarıldı!');
+                this.showNotification('Ayarlar başarıyla içe aktarıldı!');
             } catch (e) {
                 console.error('Import error:', e);
-                this.showNotification('❌ Import hatası: ' + e.message);
+                this.showNotification('Import hatası: ' + e.message);
             }
         },
 
         async resetSettings() {
             const win = Services.wm.getMostRecentWindow('navigator:browser');
 
-            if (win.confirm('🔄 Tüm ayarlar silinecek. Emin misiniz?')) {
+            if (win.confirm('Tüm ayarlar silinsin mi?')) {
                 Object.assign(this, {
                     domainRules: {},
                     manualStates: {},
@@ -1002,78 +969,74 @@
 
                 this.saveSettings();
                 await this.loadExtensions();
-                this.showNotification('🔄 Ayarlar sıfırlandı!');
+                this.showNotification('Ayarlar sıfırlandı!');
             }
         },
 
-        // =============== UI HELPERS ===============
-        createModal(doc, title, content, bgColor) {
-            const backdrop = H.el(doc, 'div', {}, STYLES.MODAL_BACKDROP);
+        // UI HELPERS
+        createModal(doc, title, opts = {}) {
+            ensureStyle(doc);
+            const backdrop = H.el(doc, 'div', {className: 'etm-backdrop'});
+            const dialog = H.el(doc, 'div', {className: 'etm-dialog'}, {role: 'dialog', 'aria-label': title});
+            if (opts.width) dialog.style.width = opts.width;
 
-            const dialog = H.el(doc, 'div', {}, STYLES.MODAL + `;width:${content.width || '480px'}`);
+            const onKey = e => {
+                if (e.key === 'Escape') { e.stopPropagation(); close(); }
+            };
+            const close = () => {
+                doc.removeEventListener('keydown', onKey, true);
+                backdrop.remove();
+            };
 
-            const header = H.el(doc, 'div', {}, STYLES.MODAL_HEADER(bgColor), [
-                H.el(doc, 'h4', {textContent: title}, 'margin:0;font-size:16px;font-weight:600;color:white'),
-                H.closeBtn(doc, () => backdrop.remove())
+            const header = H.el(doc, 'div', {className: 'etm-dh'}, {}, [
+                H.el(doc, 'h4', {textContent: title}, {title}),
+                H.iconBtn(doc, 'close', 'Kapat', close)
             ]);
+            const content = H.el(doc, 'div', {className: 'etm-dc'});
+            const toast = H.el(doc, 'div', {className: 'etm-toast'}, {role: 'status'});
+            toast.style.bottom = '12px';
 
-            const contentDiv = H.el(doc, 'div', {}, 'padding:24px;color:#000');
-
-            dialog.appendChild(header);
-            dialog.appendChild(contentDiv);
+            [header, content, toast].forEach(el => dialog.appendChild(el));
             backdrop.appendChild(dialog);
+            backdrop.addEventListener('mousedown', e => { if (e.target === backdrop) close(); });
+            doc.addEventListener('keydown', onKey, true);
+            (doc.body || doc.documentElement).appendChild(backdrop);
 
-            backdrop.addEventListener('click', e => e.target === backdrop && backdrop.remove());
-            doc.body.appendChild(backdrop);
-
-            // Add animation CSS
-            if (!doc.getElementById('modal-styles')) {
-                const style = H.el(doc, 'style', {id: 'modal-styles'});
-                style.textContent = '@keyframes modalSlideIn{from{transform:scale(0.9) translateY(-20px);opacity:0}to{transform:scale(1) translateY(0);opacity:1}}';
-                doc.head.appendChild(style);
-            }
-
-            return {backdrop, dialog, header, content: contentDiv};
+            return {backdrop, dialog, header, content, toast, close};
         },
 
         showError(message) {
             const container = this.panel?.ownerDocument.getElementById('ext-list-container');
             if (!container) return;
-
-            container.innerHTML = `
-                <div style="text-align:center;padding:40px;color:#f44336">
-                    <div style="font-size:48px;margin-bottom:16px">⚠️</div>
-                    <h4 style="margin:0 0 8px 0">Extension Listesi Yüklenemedi</h4>
-                    <p style="font-size:12px;color:#666;margin:10px 0">${message}</p>
-                </div>
-            `;
+            const doc = container.ownerDocument;
+            container.replaceChildren(H.el(doc, 'div', {className: 'etm-empty'}, {}, [
+                H.el(doc, 'div', {className: 'etm-err', textContent: 'Uzantı listesi yüklenemedi'}),
+                H.el(doc, 'div', {textContent: String(message || '')}, {})
+            ]));
         },
 
+        // Bildirim: açık pencerenin ya da panelin içinde, yoksa altta küçük bir satır
         showNotification(message) {
             const doc = Services.wm.getMostRecentWindow('navigator:browser').document;
+            const target = doc.querySelector('.etm-dialog .etm-toast') ||
+                (this.panel?.state === 'open' ? doc.getElementById('etm-toast') : null);
 
-            doc.getElementById('ext-toggle-notif')?.remove();
-
-            const notif = H.el(doc, 'div', {
-                id: 'ext-toggle-notif',
-                textContent: message
-            }, 'position:fixed;bottom:24px;right:24px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;padding:14px 20px;border-radius:12px;box-shadow:0 6px 20px rgba(0,0,0,0.3);z-index:10000;font-size:14px;font-weight:600;animation:slideIn 0.4s ease;max-width:300px');
-
-            if (!doc.getElementById('ext-toggle-styles')) {
-                const style = H.el(doc, 'style', {id: 'ext-toggle-styles'});
-                style.textContent = '@keyframes slideIn{from{transform:translateX(100%) scale(0.8);opacity:0}to{transform:translateX(0) scale(1);opacity:1}}';
-                doc.head.appendChild(style);
+            if (target) {
+                target.textContent = message;
+                target.classList.add('etm-show');
+                clearTimeout(target._etmTimer);
+                target._etmTimer = setTimeout(() => target.classList.remove('etm-show'), 2200);
+                return;
             }
 
-            doc.body.appendChild(notif);
-
-            setTimeout(() => {
-                notif.style.cssText += ';opacity:0;transform:translateX(100%) scale(0.8);transition:all 0.4s ease';
-                setTimeout(() => notif.remove(), 400);
-            }, 3000);
+            ensureStyle(doc);
+            doc.getElementById('ext-toggle-notif')?.remove();
+            const notif = H.el(doc, 'div', {id: 'ext-toggle-notif', className: 'etm-fltoast', textContent: message}, {role: 'status'});
+            (doc.body || doc.documentElement).appendChild(notif);
+            setTimeout(() => notif.remove(), 2200);
         },
 
-        // =============== SETTINGS ===============
+        // SETTINGS
         saveSettings() {
             const prefs = Services.prefs.getBranch('extensions.toggle-manager.');
 
@@ -1081,7 +1044,6 @@
                 ['domainRules', 'manualStates', 'customOrder'].forEach(key => {
                     prefs.setStringPref(key, JSON.stringify(this[key]));
                 });
-                console.log('✅ Ayarlar kaydedildi');
             } catch (e) {
                 console.error('❌ Kaydetme hatası:', e);
             }
@@ -1096,20 +1058,16 @@
                         this[key] = JSON.parse(prefs.getStringPref(key));
                     }
                 });
-                console.log('Ayarlar yüklendi');
             } catch (e) {
                 console.error('Yükleme hatası:', e);
             }
         },
 
-        // =============== SHUTDOWN ===============
+        // SHUTDOWN
         shutdown() {
-            console.log('Extension Toggle Manager kapatılıyor...');
 
             try {
-                if (typeof CustomizableUI !== 'undefined') {
-                    CustomizableUI.destroyWidget('enhanced-ext-toggle-btn');
-                }
+                CustomizableUI.destroyWidget('enhanced-ext-toggle-btn');
             } catch (e) {}
 
             this.button?.remove();
@@ -1119,7 +1077,6 @@
         }
     };
 
-    // Auto-start
     const start = () => window.ExtensionToggleManager.init();
 
     if (document.readyState === 'complete' || document.readyState === 'interactive') {

@@ -1,0 +1,112 @@
+/* Yer imi çubuğunu pencerenin ALTINA, dikey çubuğun (kenar çubuğu/dikey sekmeler) BİTTİĞİ yerden başlatır.
+   Dikey çubuk tam yükseklikte kalır; yer imi çubuğu yalnızca sayfa alanının altındadır.
+   Gereken: toolkit.legacyUserProfileCustomizations.stylesheets = true (profile/user.js'te var) ve
+   sayfa alanının sol/sağ kenarını ölçen bookmarks_bottom.uc.js (--bm-left / --bm-right
+   değişkenlerini o ayarlar; betik yoksa 0 sayılır ve çubuk tam genişlikte olur).
+   Ayarlar: --bm-h = çubuk yüksekliği, --bm-gap = çubuğun altında ve üstünde bırakılan boşluk. */
+:root {
+  --bm-h: 28px;
+  --bm-gap: 4px;
+  --bm-total: calc(var(--bm-h) + 2 * var(--bm-gap));
+}
+
+/* Çubuk: sayfa alanının altında, altta ve üstte --bm-gap boşlukla. */
+#main-window:not([inFullscreen]):not([customizing]) #PersonalToolbar:not([collapsed="true"]) {
+  position: fixed !important;
+  inset: auto var(--bm-right, 0px) var(--bm-gap) var(--bm-left, 0px) !important;
+  height: var(--bm-h) !important;
+  min-height: var(--bm-h) !important;
+  max-height: var(--bm-h) !important;
+  z-index: 10;
+  border: none !important;
+  border-radius: 6px;
+}
+
+/* Tıklanabilirlik: çubuk #navigator-toolbox'ın içinde ama ekranın altında durur; araç kutusu varsayılan
+   olarak sayfa/kenar çubuğu katmanlarının (#browser) ALTINDA olduğu için, çubuk görünür olsa da tıklamalar
+   #browser'a gider (ölçüldü: elementFromPoint -> hbox#browser). Araç kutusunu üste al, ama genişlemiş dikey
+   çubuğun (--browser-area-z-index-sidebar-expand-on-hover = 4) ALTINDA bırak: dikey çubuk açılınca çubuğu örter. */
+#main-window:not([inFullscreen]):not([customizing]):has(#PersonalToolbar:not([collapsed="true"])) #navigator-toolbox {
+  z-index: 3 !important;
+}
+
+/* Yalnızca sayfa alanı kısalır (dikey çubuk değil). Çubuk gizliyse ("yalnızca yeni sekmede") boşluk yok. */
+#main-window:not([inFullscreen]):not([customizing]):has(#PersonalToolbar:not([collapsed="true"])) #tabbrowser-tabbox {
+  margin-bottom: var(--bm-total) !important;
+}
+
+/* Durum çubuğu (bağlantı URL'si) için kural YOK, bilerek: #statuspanel sayfa alanıyla aynı kutuda (stack) ve
+   alttan o alana yapışık; #tabbrowser-tabbox zaten --bm-total kadar kısaldığı için kendiliğinden yer imi çubuğunun
+   hemen üstünde çıkar (ölçüldü: ek kaldırma 36px yerine 72px'e fırlatıyordu). */
+
+/* Dikey sekme şeridi: Helium gibi dar ve sıkı (geçici profilde ölçüldü; nav-bar yüksekliği 40px, değişmez).
+     varsayılan : şerit 50px, sekme satırı 41px (32px kutu + 2*2px kenar boşluğu + 5px)
+     --vt-box 28 : şerit 42px, sekme satırı 33px (ölçüldü); şu anki 26 -> şerit 40px, satır 31px
+   Daraltılmış şerit genişliği = --vt-box + 2 * --vt-inline ; satır yüksekliği = 5px + --vt-box + 2 * --vt-block.
+   Sıklığı değiştirmek için yalnızca aşağıdaki üç sayıyı oynat (örn. --vt-block: 1px -> satır 35px).
+   Genişlemiş şeritte satırlar da bu yüzden daha alçak/yanlarda daha dar olur (Helium'daki gibi).
+   Yer imi çubuğunun başlangıcı bookmarks_bottom.uc.js sayesinde kendiliğinden uyar. */
+:root {
+  --vt-box: 26px;
+  --vt-inline: 7px;
+  --vt-block: 0px;
+
+  --tab-min-height: var(--vt-box) !important;
+  --tab-collapsed-background-width: var(--vt-box) !important;
+  --tab-margin-inline-inner: var(--vt-inline) !important;
+  --tab-margin-block: var(--vt-block) !important;
+  --tab-height-with-margin-padding: calc(5px + var(--vt-box) + 2 * var(--vt-block)) !important;
+  --tab-collapsed-width: calc(var(--vt-box) + 2 * var(--vt-inline)) !important;
+}
+
+/* Adres çubuğu: yanlardan daralt, dikeyde biraz büyüt (araç çubuğunu büyütmeden, alt/üst boşluğu azaltarak);
+   Helium gibi ortalı, kısa bir kutu. Her şey ORANTILI: piksel yok.
+   --urlbar-w: genişlik, pencere genişliğinin yüzdesi (vw). Alt sınır: --urlbar-min-w (yine pencere yüzdesi).
+   --urlbar-base: çubuğun taban yüksekliği (28px); --urlbar-extra-ratio: ona eklenen oran, 0.143 -> +4px (32px), 0.07 -> +2px.
+   Boşluk (Firefox'un 4px'i) büyüyen yüksekliğin yarısı kadar azalır: araç çubuğu yüksekliği DEĞİŞMEZ.
+   Firefox genişliği indirme/uzantı düğmelerinin alanına göre hesaplar; burada sabit bir genişlik verip
+   iki yandaki boşluğu otomatik bölerek ortalıyoruz. Açılır öneri paneli çubuğun genişliğini izler. */
+:root {
+  --urlbar-w: 37vw;
+  --urlbar-min-w: 20vw;
+  --urlbar-base: max(28px, 1.4em);
+  --urlbar-extra-ratio: 0.143;
+  --urlbar-extra: calc(var(--urlbar-base) * var(--urlbar-extra-ratio));
+  --urlbar-padding-block: calc(4px - var(--urlbar-extra) / 2) !important;
+}
+
+#urlbar-container {
+  flex: 0 1 auto !important;
+  width: var(--urlbar-w) !important;
+  min-width: var(--urlbar-min-w) !important;
+  margin-inline: auto !important;
+}
+
+#urlbar {
+  --urlbar-height: calc(var(--urlbar-base) + var(--urlbar-extra)) !important;
+}
+
+/* Adres çubuğu odakta değilken yalnızca ana alan adı, ortalı (urlbar_domain.uc.js #urlbar'a data-host yazar).
+   Odaklanınca/tıklayınca gerçek URL görünür. Gerçek metin odak yokken tamamen gizlenir (opacity: 0), üstüne alan adı çizilir;
+   hiçbir şey tıklamayı engellemez (pointer-events: none). Betik yoksa data-host olmaz ve hiçbir şey değişmez. */
+#urlbar:not([focused])[data-host] #urlbar-input {
+  /* color: transparent yetmez: Firefox alt alan adını ve yolu (gemini. ... /app?hl=tr) ayrı bir "ikincil seçim"
+     rengiyle boyar ve o renk saydam olmaz, alan adının yanında hayalet metin kalır. opacity tüm boyamayı gizler. */
+  opacity: 0 !important;
+}
+
+#urlbar:not([focused])[data-host] .urlbar-input-container {
+  position: relative;
+}
+
+#urlbar:not([focused])[data-host] .urlbar-input-container::after {
+  content: attr(data-host);
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  font: inherit;
+  color: var(--toolbar-field-color, currentColor);
+}

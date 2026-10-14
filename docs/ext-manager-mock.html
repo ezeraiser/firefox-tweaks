@@ -1,0 +1,397 @@
+<title>Uzantı Yöneticisi Taslağı</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* Yerleşim: solda mevcut panelin birebir küçük kopyası, sağda önerilen kompakt panel; altında değişiklik notları.
+     Renkler Firefox'un kendi panel paletine yakın tutuldu (açık: beyaz panel, koyu: #2b2a33). */
+  :root {
+    --page: #f0f0f4;
+    --panel: #ffffff;
+    --panel-2: #f9f9fb;
+    --fg: #15141a;
+    --muted: #5b5b66;
+    --line: #dcdce2;
+    --hover: rgba(21, 20, 26, .07);
+    --press: rgba(21, 20, 26, .12);
+    --accent: #0060df;
+    --on-accent: #ffffff;
+    --off: #8f8f9d;
+    --danger: #c50042;
+    --tip-bg: #15141a;
+    --tip-fg: #fbfbfe;
+    --shadow: 0 2px 14px rgba(21, 20, 26, .22), 0 0 0 1px rgba(21, 20, 26, .08);
+    --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --page: #1c1b22; --panel: #2b2a33; --panel-2: #23222b; --fg: #fbfbfe; --muted: #bfbfc9;
+      --line: #4a4a55; --hover: rgba(251, 251, 254, .1); --press: rgba(251, 251, 254, .16);
+      --accent: #00ddff; --on-accent: #15141a; --off: #6e6e7c; --danger: #ff6a8d;
+      --tip-bg: #fbfbfe; --tip-fg: #15141a; --shadow: 0 2px 14px rgba(0, 0, 0, .55), 0 0 0 1px rgba(251, 251, 254, .08);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page: #1c1b22; --panel: #2b2a33; --panel-2: #23222b; --fg: #fbfbfe; --muted: #bfbfc9;
+    --line: #4a4a55; --hover: rgba(251, 251, 254, .1); --press: rgba(251, 251, 254, .16);
+    --accent: #00ddff; --on-accent: #15141a; --off: #6e6e7c; --danger: #ff6a8d;
+    --tip-bg: #fbfbfe; --tip-fg: #15141a; --shadow: 0 2px 14px rgba(0, 0, 0, .55), 0 0 0 1px rgba(251, 251, 254, .08);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--page); color: var(--fg); font-family: var(--font); font-size: 13px; line-height: 1.45;
+    padding-block: 28px 48px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; text-wrap: balance; }
+  .lead { color: var(--muted); margin: 0 0 24px; max-width: 62ch; }
+  .stage { display: flex; flex-wrap: wrap; gap: 28px 36px; align-items: flex-start; }
+  .col { min-width: 0; }
+  .cap { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+
+  /* ---------- ÖNERİLEN PANEL ---------- */
+  .panel { width: 340px; max-width: 100%; background: var(--panel); border-radius: 8px; box-shadow: var(--shadow); position: relative; padding: 8px; }
+  .bar { display: flex; align-items: center; gap: 2px; }
+  .search {
+    flex: 1; min-width: 0; height: 28px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel-2);
+    color: var(--fg); font: inherit; padding: 0 8px; margin-right: 4px;
+  }
+  .search::placeholder { color: var(--muted); }
+  .search:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+  .ib {
+    width: 28px; height: 28px; border: 0; border-radius: 4px; background: transparent; color: var(--fg);
+    display: grid; place-items: center; cursor: pointer; padding: 0; flex: none;
+  }
+  .ib svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .ib:hover { background: var(--hover); }
+  .ib:active { background: var(--press); }
+  .ib:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .ib[aria-expanded="true"] { background: var(--press); }
+  .list { margin-top: 6px; max-height: 232px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+  .row {
+    display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 4px 0 6px; border-radius: 4px; cursor: default; position: relative;
+  }
+  .row:hover { background: var(--hover); }
+  .row.drag-over { box-shadow: inset 0 2px 0 var(--accent); }
+  .grip { width: 10px; flex: none; color: var(--muted); opacity: 0; cursor: grab; display: grid; place-items: center; margin-left: -6px; }
+  .grip svg { width: 10px; height: 14px; fill: currentColor; }
+  .row:hover .grip, .row:focus-within .grip { opacity: .7; }
+  .ico { width: 18px; height: 18px; border-radius: 4px; flex: none; display: grid; place-items: center; font-size: 10px; font-weight: 700; color: #fff; }
+  .name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row.off .name { color: var(--muted); }
+  .row.off .ico { filter: grayscale(1); opacity: .55; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
+  .acts { display: flex; gap: 0; opacity: 0; transition: opacity .1s; }
+  .row:hover .acts, .row:focus-within .acts { opacity: 1; }
+  .acts .ib { width: 24px; height: 24px; }
+  .sw {
+    width: 28px; height: 16px; border-radius: 8px; border: 0; padding: 0; position: relative; flex: none; cursor: pointer;
+    background: var(--off); transition: background .12s;
+  }
+  .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--panel); transition: transform .12s; }
+  .sw[aria-checked="true"] { background: var(--accent); }
+  .sw[aria-checked="true"]::after { transform: translateX(12px); background: var(--on-accent); }
+  .sw:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; padding: 6px 6px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+  .empty { padding: 18px 8px; text-align: center; color: var(--muted); }
+
+  .menu {
+    position: absolute; z-index: 5; min-width: 188px; background: var(--panel); border-radius: 6px; padding: 4px; box-shadow: var(--shadow);
+  }
+  .menu[hidden] { display: none; }
+  .mi {
+    display: flex; align-items: center; gap: 8px; width: 100%; height: 28px; border: 0; background: transparent; color: var(--fg);
+    font: inherit; text-align: left; padding: 0 8px; border-radius: 4px; cursor: pointer;
+  }
+  .mi:hover, .mi:focus-visible { background: var(--hover); outline: none; }
+  .mi .chk { width: 14px; flex: none; text-align: center; color: var(--accent); }
+  .mi svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  .mi.danger { color: var(--danger); }
+  .sep { height: 1px; background: var(--line); margin: 4px 2px; }
+  .toast {
+    position: absolute; left: 8px; right: 8px; bottom: 36px; background: var(--tip-bg); color: var(--tip-fg); border-radius: 6px;
+    padding: 6px 10px; font-size: 12px; opacity: 0; transform: translateY(4px); transition: .18s; pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: none; }
+  #tip {
+    position: fixed; z-index: 99; background: var(--tip-bg); color: var(--tip-fg); font-size: 12px; padding: 4px 8px; border-radius: 4px;
+    pointer-events: none; opacity: 0; transition: opacity .08s; white-space: nowrap; box-shadow: 0 1px 6px rgba(0, 0, 0, .3);
+  }
+  #tip.on { opacity: 1; }
+
+  /* ---------- MEVCUT PANEL (kodundaki STYLES değerlerinden) ---------- */
+  .old { width: 370px; max-width: 100%; border-radius: 8px; overflow: hidden; box-shadow: var(--shadow); background: #fff; color: #333; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .old .h { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; padding: 14px; }
+  .old h3 { margin: 0 0 1px; font-size: 17px; font-weight: 600; }
+  .old .sr { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+  .old .in { flex: 1; padding: 6px 12px; border-radius: 16px; font-size: 13px; background: rgba(255, 255, 255, .9); color: #333; }
+  .old .se { padding: 6px 10px; border-radius: 16px; font-size: 12px; background: rgba(255, 255, 255, .9); color: #333; }
+  .old .l { background: #f8f9fa; padding: 8px; }
+  .old .it { display: flex; align-items: center; padding: 3px; margin-bottom: 8px; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0, 0, 0, .1); border-left: 4px solid #4caf50; }
+  .old .it.x { background: #f5f5f5; border-left-color: #ddd; opacity: .7; }
+  .old .dh { width: 20px; margin-right: 12px; opacity: .4; font-size: 12px; color: #666; padding-left: 6px; }
+  .old .s { width: 40px; height: 22px; background: #4caf50; border-radius: 11px; position: relative; margin-right: 12px; flex: none; }
+  .old .s::after { content: ""; position: absolute; width: 18px; height: 18px; border-radius: 50%; background: #fff; top: 2px; left: 20px; }
+  .old .x .s { background: #ccc; } .old .x .s::after { left: 2px; }
+  .old .t { flex: 1; min-width: 0; margin-right: 8px; }
+  .old .t b { display: block; font-size: 14px; font-weight: 600; }
+  .old .t i { font-style: normal; font-size: 11px; color: #888; }
+  .old .ch { padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: bold; background: #e8f5e9; color: #2e7d32; min-width: 45px; text-align: center; margin-right: 4px; }
+  .old .x .ch { background: #ffebee; color: #c62828; }
+  .old .f { display: flex; padding: 10px; background: #fff; border-top: 1px solid #e0e0e0; gap: 8px; }
+  .old .f2 { display: flex; padding: 8px; background: #f0f0f0; border-top: 1px solid #ddd; gap: 6px; }
+  .old .b { flex: 1; padding: 8px 1px; border-radius: 6px; font-weight: 600; font-size: 11px; color: #fff; text-align: center; }
+
+  .notes { margin-top: 34px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px 32px; }
+  .notes h2 { font-size: 13px; margin: 0 0 6px; font-weight: 600; }
+  .notes ul { margin: 0; padding-left: 18px; color: var(--muted); }
+  .notes li { margin-bottom: 4px; }
+  .notes b { color: var(--fg); font-weight: 600; }
+  .toggle-theme { position: fixed; top: 12px; right: max(12px, env(safe-area-inset-right, 0px)); }
+  .legend { margin-top: 10px; color: var(--muted); font-size: 12px; max-width: 340px; }
+</style>
+
+<button class="ib toggle-theme" id="theme" aria-label="Temayı değiştir" data-tip="Açık / koyu tema">
+  <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg>
+</button>
+
+<div class="wrap">
+  <h1>Uzantı Yöneticisi Taslağı</h1>
+  <p class="lead">ExtensionToggleManager.uc.js panelinin mevcut hâli solda, kompakt önerisi sağda. Sağdaki panel çalışır: aç/kapa, ara, sırala, satırın üstüne gelince eylem düğmeleri, tooltip'ler. Uzantı adları örnektir.</p>
+
+  <div class="stage">
+    <div class="col">
+      <p class="cap">Şimdi</p>
+      <div class="old" aria-hidden="true">
+        <div class="h"><h3>🧩 Extensions</h3><div class="sr"><div class="in">Extension ara...</div><div class="se">Özel Sıra</div></div></div>
+        <div class="l">
+          <div class="it"><span class="dh">⋮⋮</span><span class="s"></span><span class="t"><b>uBlock Origin</b><i>v1.62.0</i></span><span class="ch">AÇIK</span></div>
+          <div class="it"><span class="dh">⋮⋮</span><span class="s"></span><span class="t"><b>DeepL</b><i>v1.20.1</i></span><span class="ch">AÇIK</span></div>
+          <div class="it x"><span class="dh">⋮⋮</span><span class="s"></span><span class="t"><b>Netflux</b><i>v0.4.2</i></span><span class="ch">KAPALI</span></div>
+          <div class="it x"><span class="dh">⋮⋮</span><span class="s"></span><span class="t"><b>Browsec VPN</b><i>v3.90.0</i></span><span class="ch">KAPALI</span></div>
+        </div>
+        <div class="f"><span class="b" style="background:#f44336">Tümünü Kapat</span><span class="b" style="background:#4caf50">Tümünü Aç</span><span class="b" style="background:#2196f3">Domain Kuralları</span></div>
+        <div class="f2"><span class="b" style="background:#607d8b">📤 Dışa Aktar</span><span class="b" style="background:#4caf50">📥 İçe Aktar</span><span class="b" style="background:#ff9800">🔄 Sıfırla</span></div>
+      </div>
+      <p class="legend">Başlık, gradient, üç renkli düğme satırı ve durum etiketleri aynı bilgiyi birkaç kez gösteriyor.</p>
+    </div>
+
+    <div class="col">
+      <p class="cap">Öneri</p>
+      <div class="panel" id="panel">
+        <div class="bar">
+          <input class="search" id="q" type="search" placeholder="Uzantılarda ara" aria-label="Uzantılarda ara" autocomplete="off">
+          <button class="ib" id="all" aria-label="Tümünü kapat" data-tip="Tümünü kapat">
+            <svg viewBox="0 0 16 16"><path d="M8 1.8v5.4"/><path d="M4.6 3.9a5.4 5.4 0 1 0 6.8 0"/></svg>
+          </button>
+          <button class="ib" id="sortBtn" aria-label="Sırala" aria-haspopup="true" aria-expanded="false" data-tip="Sırala">
+            <svg viewBox="0 0 16 16"><path d="M4.5 2.5v11M2.4 11.4l2.1 2.1 2.1-2.1M11.5 13.5v-11M9.4 4.6l2.1-2.1 2.1 2.1"/></svg>
+          </button>
+          <button class="ib" id="moreBtn" aria-label="Diğer işlemler" aria-haspopup="true" aria-expanded="false" data-tip="Diğer işlemler">
+            <svg viewBox="0 0 16 16"><circle cx="3.5" cy="8" r=".6"/><circle cx="8" cy="8" r=".6"/><circle cx="12.5" cy="8" r=".6"/></svg>
+          </button>
+        </div>
+        <div class="list" id="list" role="list"></div>
+        <div class="foot"><span id="count"></span><span id="orderNote"></span></div>
+
+        <div class="menu" id="sortMenu" hidden style="right:36px; top:42px"></div>
+        <div class="menu" id="moreMenu" hidden style="right:8px; top:42px"></div>
+        <div class="toast" id="toast" role="status"></div>
+      </div>
+      <p class="legend">Satırın üstüne gelince sürükleme tutacağı ve iki eylem çıkar. Kural tanımlı uzantıda adın yanında küçük bir nokta durur.</p>
+    </div>
+  </div>
+
+  <div class="notes">
+    <div>
+      <h2>Kaldırılanlar</h2>
+      <ul>
+        <li>Gradient başlık ve "🧩 Extensions" etiketi (panelin ne olduğu zaten belli).</li>
+        <li>Durum etiketleri (AÇIK / KAPALI): anahtarın kendisi aynı bilgiyi veriyor.</li>
+        <li>Alt alta iki düğme satırı ve emoji.</li>
+        <li>Her satırdaki sürüm numarası (tooltip'e ve uzantı hakkında sayfasına kalır).</li>
+      </ul>
+    </div>
+    <div>
+      <h2>Simge ve tooltip</h2>
+      <ul>
+        <li>Üst çubukta dört simge: <b>Tümünü kapat/aç</b> (güç simgesi, duruma göre ad değişir), <b>Sırala</b>, <b>Diğer işlemler</b>.</li>
+        <li>Diğer işlemlerde: Domain kuralları, Dışa aktar, İçe aktar, Sıfırla.</li>
+        <li>Satır eylemleri: <b>Domain kuralları</b>, <b>Uzantı ayarları</b>; yalnızca üzerine gelince.</li>
+        <li>Gerçek uygulamada tooltip'ler Firefox'un yerel <b>tooltiptext</b> öznitelikleriyle gelir.</li>
+      </ul>
+    </div>
+    <div>
+      <h2>Karar bekleyenler</h2>
+      <ul>
+        <li>Domain kuralları penceresi ve sağ tık menüsü de aynı dile çevrilsin mi?</li>
+        <li>Bildirim (sağ altta gradient kutu) yerine panel içindeki bu küçük bildirim satırı kullanılsın mı?</li>
+        <li>Panel genişliği 340px; 300px'e inmek ister misiniz?</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div id="tip" role="tooltip"></div>
+
+<script>
+(function () {
+  var EXT = [
+    { id: 'ubo',    name: 'uBlock Origin', color: '#8a1b1b', letter: 'u', on: true,  rules: false },
+    { id: 'deepl',  name: 'DeepL',         color: '#0f2b46', letter: 'D', on: true,  rules: true  },
+    { id: 'netflux',name: 'Netflux',       color: '#b3121f', letter: 'N', on: false, rules: true  },
+    { id: 'browsec',name: 'Browsec VPN',   color: '#2a6f4d', letter: 'B', on: false, rules: false },
+    { id: 'memory', name: 'Memory Cleaner',color: '#5b3f9a', letter: 'M', on: true,  rules: false }
+  ];
+  var order = EXT.map(function (e) { return e.id; });
+  var sortMode = 0;   // 0 özel, 1 isim, 2 durum
+  var SORTS = ['Özel sıra', 'İsme göre', 'Duruma göre'];
+
+  var $ = function (id) { return document.getElementById(id); };
+  var list = $('list'), q = $('q');
+
+  var I = {
+    globe: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c2 1.8 2.9 3.8 2.9 6S10 12.2 8 14c-2-1.8-2.9-3.8-2.9-6S6 3.8 8 2z"/></svg>',
+    gear:  '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2"/><path d="M8 1.6l1 1.7 2-.3.6 1.9 1.8 1-.9 1.8.9 1.8-1.8 1-.6 1.9-2-.3-1 1.7-1-1.7-2 .3-.6-1.9-1.8-1 .9-1.8-.9-1.8 1.8-1 .6-1.9 2 .3z"/></svg>',
+    up:    '<svg viewBox="0 0 16 16"><path d="M8 14V3M3.5 7.5L8 3l4.5 4.5"/></svg>',
+    down:  '<svg viewBox="0 0 16 16"><path d="M8 2v11M3.5 8.5L8 13l4.5-4.5"/></svg>',
+    reset: '<svg viewBox="0 0 16 16"><path d="M2.5 8a5.5 5.5 0 1 0 1.8-4.1M2.5 2.5v3.2h3.2"/></svg>'
+  };
+
+  function sorted() {
+    var arr = EXT.slice();
+    if (sortMode === 0) arr.sort(function (a, b) { return order.indexOf(a.id) - order.indexOf(b.id); });
+    if (sortMode === 1) arr.sort(function (a, b) { return a.name.localeCompare(b.name, 'tr'); });
+    if (sortMode === 2) arr.sort(function (a, b) { return (b.on - a.on) || a.name.localeCompare(b.name, 'tr'); });
+    return arr;
+  }
+
+  function render() {
+    var term = q.value.trim().toLowerCase();
+    var items = sorted().filter(function (e) { return !term || e.name.toLowerCase().indexOf(term) !== -1; });
+    list.innerHTML = '';
+    if (!items.length) { list.innerHTML = '<div class="empty">Eşleşen uzantı yok</div>'; }
+    items.forEach(function (e) {
+      var row = document.createElement('div');
+      row.className = 'row' + (e.on ? '' : ' off');
+      row.setAttribute('role', 'listitem');
+      row.dataset.id = e.id;
+      row.draggable = sortMode === 0 && !term;
+      row.innerHTML =
+        '<span class="grip" data-tip="Sırayı değiştirmek için sürükle"><svg viewBox="0 0 10 14"><circle cx="3" cy="3" r="1"/><circle cx="7" cy="3" r="1"/><circle cx="3" cy="7" r="1"/><circle cx="7" cy="7" r="1"/><circle cx="3" cy="11" r="1"/><circle cx="7" cy="11" r="1"/></svg></span>' +
+        '<span class="ico" style="background:' + e.color + '">' + e.letter + '</span>' +
+        '<span class="name" data-tip="' + e.name + (e.on ? ' · etkin' : ' · kapalı') + '">' + e.name + '</span>' +
+        (e.rules ? '<span class="dot" data-tip="Bu uzantı için domain kuralı var"></span>' : '') +
+        '<span class="acts">' +
+          '<button class="ib" aria-label="Domain kuralları" data-tip="Domain kuralları" data-act="domain">' + I.globe + '</button>' +
+          '<button class="ib" aria-label="Uzantı ayarları" data-tip="Uzantı ayarları" data-act="opts">' + I.gear + '</button>' +
+        '</span>' +
+        '<button class="sw" role="switch" aria-checked="' + e.on + '" aria-label="' + e.name + '" data-tip="' + (e.on ? 'Kapat' : 'Aç') + '" data-act="sw"></button>';
+      list.appendChild(row);
+    });
+    var active = EXT.filter(function (e) { return e.on; }).length;
+    $('count').textContent = active + ' / ' + EXT.length + ' etkin';
+    $('orderNote').textContent = sortMode === 0 ? '' : SORTS[sortMode];
+    var allBtn = $('all');
+    var anyOn = active > 0;
+    allBtn.setAttribute('aria-label', anyOn ? 'Tümünü kapat' : 'Tümünü aç');
+    allBtn.dataset.tip = anyOn ? 'Tümünü kapat' : 'Tümünü aç';
+  }
+
+  function toast(msg) {
+    var t = $('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toast.h); toast.h = setTimeout(function () { t.classList.remove('show'); }, 1800);
+  }
+
+  list.addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-act]'); var row = ev.target.closest('.row');
+    if (!row) return;
+    var e = EXT.filter(function (x) { return x.id === row.dataset.id; })[0];
+    if (b && b.dataset.act === 'domain') { toast(e.name + ': domain kuralları açılır'); return; }
+    if (b && b.dataset.act === 'opts') { toast(e.name + ': uzantı ayarları açılır'); return; }
+    e.on = !e.on; render();
+  });
+
+  $('all').addEventListener('click', function () {
+    var anyOn = EXT.some(function (e) { return e.on; });
+    EXT.forEach(function (e) { e.on = !anyOn; }); render();
+    toast(anyOn ? 'Tüm uzantılar kapatıldı' : 'Tüm uzantılar açıldı');
+  });
+  q.addEventListener('input', render);
+
+  // Sürükle-bırak (yalnızca özel sırada, aramasız)
+  var dragId = null;
+  list.addEventListener('dragstart', function (ev) { var r = ev.target.closest('.row'); if (!r) return; dragId = r.dataset.id; ev.dataTransfer.effectAllowed = 'move'; });
+  list.addEventListener('dragover', function (ev) { var r = ev.target.closest('.row'); if (!r || !dragId) return; ev.preventDefault(); [].forEach.call(list.children, function (c) { c.classList.remove('drag-over'); }); r.classList.add('drag-over'); });
+  list.addEventListener('drop', function (ev) {
+    var r = ev.target.closest('.row'); if (!r || !dragId) return; ev.preventDefault();
+    var from = order.indexOf(dragId), to = order.indexOf(r.dataset.id);
+    order.splice(to, 0, order.splice(from, 1)[0]); dragId = null; render();
+  });
+  list.addEventListener('dragend', function () { dragId = null; [].forEach.call(list.children, function (c) { c.classList.remove('drag-over'); }); });
+
+  // Menüler
+  var sortMenu = $('sortMenu'), moreMenu = $('moreMenu');
+  function closeMenus() {
+    sortMenu.hidden = true; moreMenu.hidden = true;
+    $('sortBtn').setAttribute('aria-expanded', 'false'); $('moreBtn').setAttribute('aria-expanded', 'false');
+  }
+  function buildSort() {
+    sortMenu.innerHTML = SORTS.map(function (s, i) {
+      return '<button class="mi" role="menuitemradio" aria-checked="' + (i === sortMode) + '" data-sort="' + i + '"><span class="chk">' + (i === sortMode ? '✓' : '') + '</span>' + s + '</button>';
+    }).join('');
+  }
+  function buildMore() {
+    moreMenu.innerHTML =
+      '<button class="mi" data-m="domain">' + I.globe + 'Domain kuralları…</button><div class="sep"></div>' +
+      '<button class="mi" data-m="export">' + I.up + 'Ayarları dışa aktar</button>' +
+      '<button class="mi" data-m="import">' + I.down + 'Ayarları içe aktar</button><div class="sep"></div>' +
+      '<button class="mi danger" data-m="reset">' + I.reset + 'Ayarları sıfırla</button>';
+  }
+  $('sortBtn').addEventListener('click', function (ev) {
+    ev.stopPropagation(); var open = sortMenu.hidden; closeMenus();
+    if (open) { buildSort(); sortMenu.hidden = false; $('sortBtn').setAttribute('aria-expanded', 'true'); }
+  });
+  $('moreBtn').addEventListener('click', function (ev) {
+    ev.stopPropagation(); var open = moreMenu.hidden; closeMenus();
+    if (open) { buildMore(); moreMenu.hidden = false; $('moreBtn').setAttribute('aria-expanded', 'true'); }
+  });
+  sortMenu.addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-sort]'); if (!b) return;
+    sortMode = +b.dataset.sort; closeMenus(); render();
+  });
+  moreMenu.addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-m]'); if (!b) return; closeMenus();
+    var m = { domain: 'Domain kuralları penceresi açılır', export: 'Ayarlar dışa aktarıldı', import: 'Dosya seçilir, ayarlar içe aktarılır', reset: 'Sıfırlamadan önce onay istenir' };
+    toast(m[b.dataset.m]);
+  });
+  document.addEventListener('click', closeMenus);
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') closeMenus(); });
+
+  // Tooltip (gerçek uygulamada yerel tooltiptext kullanılır)
+  var tip = $('tip');
+  document.addEventListener('mouseover', function (ev) {
+    var t = ev.target.closest('[data-tip]'); if (!t) return;
+    tip.textContent = t.dataset.tip;
+    var r = t.getBoundingClientRect();
+    tip.classList.add('on');
+    var w = tip.offsetWidth;
+    tip.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + 'px';
+    tip.style.top = (r.bottom + 6) + 'px';
+  });
+  document.addEventListener('mouseout', function (ev) { if (ev.target.closest('[data-tip]')) tip.classList.remove('on'); });
+  document.addEventListener('scroll', function () { tip.classList.remove('on'); }, true);
+
+  // Tema anahtarı (yalnızca önizleme için)
+  var root = document.documentElement;
+  $('theme').addEventListener('click', function () {
+    var dark = root.getAttribute('data-theme') === 'dark' ||
+      (!root.getAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    root.setAttribute('data-theme', dark ? 'light' : 'dark');
+  });
+
+  render();
+})();
+</script>

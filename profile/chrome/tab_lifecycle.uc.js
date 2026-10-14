@@ -18,10 +18,10 @@
 //    boşta kaldıkça periyodik tekrar (önce temizlik, sonra kırpma).
 //
 // MUAFİYETLER: Ses/video/PiP/paylaşım yapan sekmeler ve yüklenmekte olanlar zincirin HİÇBİR adımına girmez
-// (süreçleri de kırpılmaz). Sabitlenmiş sekmeler yalnızca boşaltılmaz. Süreci görünür/medya sekmeyle paylaşılan
+// (ses çalan sekmenin süreci yalnızca hiçbir sayfa görünmezken TRIM_MEDIA_TAB_AFTER_HIDDEN_SECONDS sonra, sonra TRIM_MEDIA_TAB_EVERY_SECONDS'ta bir kırpılır). Sabitlenmiş sekmeler yalnızca boşaltılmaz. Süreci görünür/medya sekmeyle paylaşılan
 // sekmede süreç düzeyindeki adımlar (GC, kırpma, boşaltma) atlanır, ki aktif sekme yavaşlamasın.
 //
-// Günlük: <profil>\chrome\memlog.txt (ENABLE_LOGGING). Hatalar her zaman yazılır.
+// Günlük: <profil>\chrome\memlog.txt (ENABLE_LOGGING). Kapalıyken dosyaya HİÇBİR şey yazılmaz (hatalar yalnızca Tarayıcı Konsolu'na gider).
 (function() {
     'use strict';
 
@@ -160,7 +160,7 @@
          * içerik kaybolmaz. Süreç görünür/medya sekmeyle paylaşılıyorsa atlanır (30 sn sonra yeniden denenir).
          * 0 = kapalı. TETİKLEYEN: sekmenin [2] derin uykudan sonra da görünmez kalması (bellek önce temizlenmiş olur).
          */
-        TAB_TRIM_AFTER_SECONDS: 180,
+        TAB_TRIM_AFTER_SECONDS: 120,
 
         // ==================================================================
         // 5) BOŞALTMA - sekmeden ayrıldıktan DISCARD_AFTER_SECONDS sonra
@@ -232,7 +232,7 @@
          * Boşta kalırken süreçler zamanla şişer. Kaç dakikada bir tekrar (önce genel GC/CC/memory, 4 sn sonra kırpma)
          * yapılsın? 0 = yalnızca bir kez. TETİKLEYEN: bir önceki genel kırpmadan bu kadar süre geçmesi.
          */
-        MINIMIZE_RETRIM_MINUTES: 10,
+        MINIMIZE_RETRIM_MINUTES: 3,
 
         /** true: Genel kırpmada ağ/ses/depolama gibi yardımcı süreçler de kırpılır. false: yalnızca ana + GPU + sekme/uzantı süreçleri. */
         TRIM_HELPER_PROCESSES: true,
@@ -247,15 +247,34 @@
          */
         TRIM_OTHERS_WHILE_MEDIA_PLAYS: true,
 
+        /**
+         * Ses çalan bir sekmenin SÜRECİ de kırpılsın: Firefox her arka plana gittiğinde (pencere küçültüldü ya da
+         * tamamen örtüldü, hiçbir sayfa görünmüyor) bu kadar saniye bekledikten sonra BİR KEZ kırpılır; bir sayfa
+         * tekrar görünürse (öne gelirseniz) sayaç sıfırlanır, sonraki arka plana gidişte yine bu kadar beklenir.
+         * Varsayılan davranış medya sekmesinin sürecine hiç dokunmamaktı; ama müzik/video açıkken bellek en çok o
+         * süreçte kalıyordu. Kırpılan sayfalar çalma sırasında gerekirse hemen RAM'e döner (yumuşak hata), yalnızca
+         * kullanılmayan kısım dışarıda kalır. 0 = kapalı (eski davranış; TRIM_MEDIA_TAB_EVERY_SECONDS de işlemez).
+         * PiP/ekran paylaşımı olan sekmeye dokunulmaz. Ses/görüntü takılırsa 0 yapın.
+         * TETİKLEYEN: ses çalan sekme + hiçbir sayfanın görünmemesi. TETİKLER: TRIM_MEDIA_TAB_EVERY_SECONDS (tekrar).
+         */
+        TRIM_MEDIA_TAB_AFTER_HIDDEN_SECONDS: 3,
+
+        /**
+         * Arka planda kalmaya devam ederken medya sekmesinin süreci bu kadar saniyede bir TEKRAR kırpılsın
+         * (süreç çalıştıkça sayfaları geri alıp şişer). 0 = tekrar yok, arka plana her gidişte yalnızca bir kez.
+         * Öne gelip tekrar arkaya gidince döngü baştan başlar: önce TRIM_MEDIA_TAB_AFTER_HIDDEN_SECONDS beklenir.
+         */
+        TRIM_MEDIA_TAB_EVERY_SECONDS: 120,
+
         // ==================================================================
         // 7) GÜNLÜK
         // ==================================================================
 
-        /** true: Yaptığı işleri chrome\memlog.txt dosyasına yazar. Hatalar bu ayardan bağımsız HER ZAMAN yazılır. */
-        ENABLE_LOGGING: true,
+        /** true: Yaptığı işleri ve hataları chrome\memlog.txt dosyasına yazar. false: dosyaya hiçbir şey yazılmaz (hatalar yalnızca Tarayıcı Konsolu'na gider). */
+        ENABLE_LOGGING: false,
 
         /** Kaç dakikada bir günlüğe "çalışıyorum" özet satırı yazılsın? 0 = yazma. */
-        HEARTBEAT_MINUTES: 10
+        HEARTBEAT_MINUTES: 0
     };
 
     // ===========================================
@@ -266,7 +285,7 @@
     try { logPath = PathUtils.join(PathUtils.profileDir, 'chrome', 'memlog.txt'); } catch (e) {}
     function fileLog(level, args) {
         try {
-            if (!logPath) return;
+            if (!logPath || !CONFIG.ENABLE_LOGGING) return;
             const text = args.map(a => (a && a.stack) ? a.stack : (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
             const line = `${new Date().toISOString()} [${TAG}${level === 'E' ? ' ERROR' : ''}] ${text}\n`;
             logBytes += line.length;
@@ -600,12 +619,37 @@
         else { st.discardRetryAt = now + 60000; log('Firefox boşaltmayı reddetti (kaydedilmemiş değişiklik/seçili sekme olabilir) ->', lbl); }
     }
 
+    // Ses çalan (gizli) sekmenin süreci: arka plana gidince TRIM_MEDIA_TAB_AFTER_HIDDEN_SECONDS sonra bir kez, sonra
+    // TRIM_MEDIA_TAB_EVERY_SECONDS'ta bir. pid -> son kırpma zamanı; idleSince = hiçbir sayfa görünmez olduğu an
+    // (görünür sayfa varken 0, yani her öne gelişte sayaç sıfırlanır).
+    const mediaTrimAt = new Map();
+    let idleSince = 0;
+    function updateIdle(now) {
+        if (quickState().allIdle) { if (!idleSince) idleSince = now; }
+        else idleSince = 0;
+    }
+    function trimMediaTabProcess(tab, now) {
+        const after = CONFIG.TRIM_MEDIA_TAB_AFTER_HIDDEN_SECONDS * 1000;
+        if (!(after > 0) || !idleSince || now - idleSince < after) return;
+        const pid = pidOf(tab);
+        if (!pid) return;
+        const last = mediaTrimAt.get(pid) || 0;
+        const every = CONFIG.TRIM_MEDIA_TAB_EVERY_SECONDS * 1000;
+        if (last >= idleSince && !(every > 0 && now - last >= every)) return;   // bu arka plan oturumunda yapıldı
+        mediaTrimAt.set(pid, now);
+        if (trimPid(pid)) log('medya sekmesinin süreci kırpıldı:', label(tab), pid);
+    }
+
     function processTab(tab, now) {
         const br = tab.linkedBrowser;
         let st = state.get(tab);
         if (!br || !br.browsingContext) { if (st) state.delete(tab); return; }   // boşaltılmış sekme
         const reason = activeReason(tab);
-        if (reason) { if (st) resetTab(tab, `aktif: ${reason}`); return; }
+        if (reason) {
+            if (st) resetTab(tab, `aktif: ${reason}`);
+            if (reason === 'audio') trimMediaTabProcess(tab, now);
+            return;
+        }
         if (!st) { st = { hiddenSince: now }; state.set(tab, st); }
         const age = now - st.hiddenSince;
 
@@ -749,7 +793,7 @@
     // ===========================================
     async function tick(now = Date.now()) {
         if (window.closed) return { skipped: true };
-        snapCache = null;
+        snapCache = null; updateIdle(now);
         for (const tab of gBrowser.tabs) {
             try { processTab(tab, now); } catch (e) { logErr('sekme hatası', label(tab), e); }
         }
