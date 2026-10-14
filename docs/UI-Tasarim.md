@@ -171,3 +171,46 @@ Aday nedenler: Google hesabına giriş ve izleme geçmişi, uBlock/içerik engel
    - Yer imi çubuğu altta: `userChrome.css`'in ilgili bölümünü silin (ya da dosyayı çıkarın), `bookmarks_bottom.uc.js`'i çıkarın.
    - Alan adı gösterimi: `urlbar_domain.uc.js`'i çıkarın (CSS tek başına bir şey değiştirmez, `data-host` olmadan çalışmaz).
 4. Ayarlar (`--bm-*`, `--vt-*`, `--urlbar-*`) `userChrome.css`'in başındadır; sayı değiştirip yeniden başlatmak yeterli.
+
+## 9. Ana profildeki ayarların kaydı (`about:config`)
+
+`about:config` değişiklikleri depodaki dosyalarda değil, profilin `prefs.js` dosyasında tutulur; bu yüzden aşağıdaki liste
+canlı profilden (`Ezer1`) okunan bir **anlık görüntüdür**. `prefs.js` depoya kopyalanmadı: içinde cihaz/istemci
+kimlikleri, geliştirici araçları geçmişi ve oturumla ilgili başka veriler var. Bu ayarlar `user.js`'e de yazılmadı, çünkü
+`user.js` her açılışta değeri sabitler ve `about:config`'ten sıfırlamayı etkisiz kılar.
+
+**Profilde şu an kayıtlı olan ve varsayılandan farklı performans/bellek ayarları**
+
+| Ayar | Değer | Varsayılan (bu kurulumda okunan ya da bilinen) |
+|---|---|---|
+| `browser.cache.disk.enable` | false | true |
+| `browser.cache.memory.capacity` | 128000 | otomatik |
+| `browser.sessionhistory.max_total_viewers` | 0 | -1 |
+| `browser.sessionhistory.max_entries` | 5 | 50 |
+| `browser.places.speculativeConnect.enabled` | false | true |
+| `browser.startup.preXulSkeletonUI` | false | true |
+| `dom.ipc.processCount` | 1 | 8 |
+| `dom.ipc.processPrelaunch.fission.number` | 1 | - |
+| `network.http.speculative-parallel-limit` | 0 | 20 |
+| `network.prefetch-next` / `network.dns.disablePrefetch` | false / true | true / false |
+| `network.modulepreload`, `network.stricttransportsecurity.preloadlist` | false | true |
+| `network.http.max-connections` | 300 | 900 |
+| `security.OCSP.require` | true | false |
+| `security.tls.enable_0rtt_data` | false | true |
+| `image.mem.surfacecache.max_size_kb` / `image.mem.animated.decode_on_demand.threshold_kb` | 102400 / 4096 | çok daha büyük |
+| `media.memory_cache_max_size` | 65536 | - |
+| `gfx.webrender.max-shared-surface-size` | 1024 | 2048 (aynı zamanda `user.js`'te) |
+| `gfx.canvas.remote.use-canvas-translator-event` | false | - |
+| `privacy.spoof_english` | 1 | 0 |
+| `sidebar.animation.expand-on-hover.duration-ms` / `.delay-duration-ms` | 100 / 100 | 400 / 200 |
+| `sidebar.visibility`, `sidebar.verticalTabs` | expand-on-hover, true | always-show, false |
+| `toolkit.legacyUserProfileCustomizations.stylesheets` / `.userChrome.js.enabled` | true / true | false |
+
+**Bu çalışma sırasında `prefs.js`'te vardı, artık yok (varsayılana döndürüldü):**
+`privacy.fingerprintingProtection`, `gfx.webrender.max-partial-present-rects`, `gfx.webrender.compositor.max-update-rects`,
+`layers.acceleration.force-enabled`, `javascript.options.mem.gc_high_frequency_time_limit_ms` (350) ve
+`dom.ipc.processCount.webIsolated` (1). Bunlardan ilk dördü GPU/parmak izi şüphelerini elemek için sıfırlandı; sonuç
+değişmedi (bkz. bölüm 7). Son ikisinin neden sıfırlandığına dair bir not yok; yalnızca dosyada görünmedikleri için buraya
+yazıldı.
+
+Tam bir geri yükleme için profili yedeklemek gerekir; bu liste yalnızca neyin değiştiğini hatırlatır.
