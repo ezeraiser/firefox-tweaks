@@ -46,74 +46,92 @@ ekran görüntüsüyle bakıldı. Hiçbiri gerçek günlük profilde uzun süre 
   Düğmeler kenar çubuğunun shadow DOM'unda; `::part()` CSS kuralı etki etmedi (ölçüldü), bu yüzden
   `bookmarks_bottom.uc.js` stili doğrudan shadow köküne `adoptedStyleSheets` ile ekler. Üçü de 18px'e oturdu.
 
-## 2. Dikey sekme şeridi: dar ve sıkı
+**Yer imi çubuğu gizlenince alttaki boşluğun kalması (hata, düzeltildi):** "Yer imlerini gizle" denince çubuk gizleniyordu ama alttaki boşluk
+ve arka plan kalıyordu. Sebep: Firefox çubuğu gizlerken `collapsed` özniteliğini **boş değerle** (`collapsed=""`) yazıyor, kurallarım ise
+`:not([collapsed="true"])` arıyordu; boş değer bununla eşleşmediği için kural çubuğu gizliyken de zorla görünür tutuyordu. Kurallar
+`:not([collapsed])` (özniteliğin yokluğu) olarak düzeltildi. Doğrulandı: "always" (çubuk 28px, boşluk 36px), "gizle" (çubuk 0px, boşluk
+0px, sayfa alanı pencere altına kadar), "yalnızca yeni sekmede göster" (normal sayfada gizli ve boşluk yok, Yeni Sekme sayfasında görünür
+ve boşluk var, normal sayfaya dönünce tekrar gizli).
 
-Daraltılmış şerit genişliği = `--vt-box + 2 × --vt-inline`; sekme satırı yüksekliği = `5px + --vt-box + 2 × --vt-block`.
-Firefox varsayılanı şerit 50px, satır 41px. `--vt-box: 28px` iken ölçüm 42px / 33px; dosyadaki güncel değer 26px
-(40px / 31px). Araç çubuğu yüksekliği (nav-bar) değişmez. Sıklığı değiştirmek için `userChrome.css` başındaki
-üç sayı (`--vt-box`, `--vt-inline`, `--vt-block`) yeterli. Bu değişkenler yatay sekmeleri de etkiler; dikey sekme
-kullanılmadığı durum için ayrı bir koruma konmadı.
-
-## 3. Adres çubuğu
-
-**Boyut:** Genişlik `--urlbar-w: 37vw` (alt sınır `--urlbar-min-w: 20vw`), `margin-inline: auto` ile ortalanır.
-Yükseklik taban yüksekliğe (`--urlbar-base`, 28px) oranla büyür (`--urlbar-extra-ratio: 0.143`, yaklaşık +4px). Çubuğun
-alt/üst boşluğu (Firefox'un 4px'i) büyüyen yüksekliğin yarısı kadar azalır, böylece araç çubuğunun toplam yüksekliği
-değişmez. Önceki bir sürümde yalnızca yüksekliği artırmıştım, araç çubuğu da kalınlaşmıştı; istenen şey boşluğu
-azaltmaktı. Her şey piksel yerine pencere ya da taban yüksekliğe oranlıdır.
-
-**Yalnızca ana alan adı:**
-- Firefox'ta hazır ayar yok (`trimURLs` yalnızca `http://` ve `www.` kısmını kırpar).
-- `urlbar_domain.uc.js` konum değişince ana alan adını (`www.` olmadan) `data-host` özniteliği olarak yazar;
-  `userChrome.css` bunu `::after` ile ortalı çizer. Adres çubuğunun değerine hiç dokunulmaz. Odaklanınca (tıklayınca) gerçek
-  URL görünür.
-- **Hata ve ders:** Gerçek metni `color: transparent` yapmak yetmedi. Firefox alt alan adını ve yolu (`gemini.` ve
-  `/app?hl=tr`) ayrı bir "ikincil seçim" rengiyle boyuyor, o renk saydam olmuyor ve ortadaki alan adının iki yanında
-  hayalet metin kalıyordu. `opacity: 0` tüm boyamayı gizliyor. Öznitelik de `.urlbar-input-container` öğesine yazılmalı
-  (`attr()` `::after`'ın sahibinden okur).
-- `about:` sayfalarında sayfa adı gösterilir (`about:config`; `#bölüm` gizli). `about:blank/newtab/home/privatebrowsing`
-  ve `file:`, `moz-extension:` gibi şemalar olduğu gibi kalır.
-- Ölçüldü: öznitelikler ve odak durumları. **Denenmedi:** arama sonuç sayfalarında (aranan kelime gizlenir) davranış,
-  uzun alan adının düğmelerle çakışması.
-
-## 4. Uzantı yöneticisi paneli
-
-`docs/ext-manager-mock.html` mevcut paneli (soldaki) ve kompakt öneriyi (sağdaki, çalışır) yan yana gösterir.
-
-**Tasarım kararları (onaylanan):** 300px panel; pencereler ve sağ tık menüsü aynı dilde; bildirim panelin içinde.
-
-| Önce | Sonra |
-|---|---|
-| Gradient başlık, "Extensions" etiketi, yuvarlak arama + sıralama listesi | Tek satır: arama kutusu + üç simge (tümünü aç/kapat, sırala, diğer işlemler) |
-| Satırda sürükleme tutacağı, büyük anahtar, sürüm, AÇIK/KAPALI etiketi | 32px satır: uzantı simgesi, ad, küçük anahtar; sürükleme ve eylemler yalnızca üstüne gelince |
-| Altta iki renkli düğme satırı, emojiler | Alt satırda yalnızca "3 / 5 etkin" sayacı; işlemler menülerde |
-| Modal pencerelerde gradient ve emoji | Firefox panel rengiyle sade diyalog; Esc ve dışına tıklama kapatır |
-| Sağ altta gradient bildirim kutusu | Panelin/diyaloğun içinde küçük satır; hiçbiri açık değilse altta küçük bir satır |
-
-**Uygulama notları**
-- Mantık (alan adı kuralları, ayar saklama, tarayıcı entegrasyonu, uzantı ayarını açma zinciri) korundu; yalnızca
-  arayüz yeniden yazıldı. Boyut büyük ölçüde değişmedi çünkü gömülü görseller zaten küçüktü (toplam 728 bayt); ölü kod,
-  `console.log` satırları ve yorumlar kısaltıldı (52 KB'tan yaklaşık 48 KB'a).
-- Stiller tek bir `<style>`; renkler Firefox'un panel ve giriş alanı değişkenlerinden türer, açık/koyu tema kendiliğinden
-  uyar. Giriş alanları Firefox'un kendi `--input-*` ve odak değişkenlerini kullanır.
-- Araç çubuğu düğmesinin simgesi Firefox'un kendi Uzantılar simgesi (`chrome://mozapps/skin/extensions/extension.svg`).
-- Sırala ve Diğer işlemler Firefox'un yerel `menupopup`'ları (panelin dışına taşabilir).
-- **Sabitlenmiş uzantının ayar düğmesi:** Uzantının kendi açılır penceresi bizim panelin altında/üstünde kalıyordu.
-  Ölçüldü: ikisi aynı anda açık. İki ayrı açılır pencerenin sırasını z-index belirlemez; çözüm, ayarı açmadan önce kendi
-  panelimizi kapatmak.
-
-**Denenmedi:** gerçek profildeki uzantılarla görünüm, sürükle-bırak ile gerçek sıra değişimi, `title` tooltip'lerinin
-panelde çıktığı, son iki değişikliğin (simge, arama kutusu kenarlığı) ekran görüntüsü.
+**Üst çubuk otomatik gizleme (`userChrome.css`, sonda ayrı blok):** `#nav-bar` akışta kalır; gizliyken üst kenar boşluğu negatif
+(`-(36px - --ah-trigger)`), yani yalnızca `--ah-trigger` (3px) kadar şerit görünür. Fare şeride gelince, adres çubuğuna odaklanınca (Ctrl+L)
+ya da bir menü/panel açıkken boşluk 0 olur ve **sayfa çubuk yüksekliği kadar aşağı itilir** (üstüne binmez). Kapanış `--ah-close-delay`
+(varsayılan 1s) kadar gecikmeyle olur, açılış gecikmesizdir. Yer imi çubuğu `#navigator-toolbox` içinde alta sabitli olduğundan toolbox'ın
+kendisi gizlenmez, yalnızca `#nav-bar` hareket eder.
+**Üç tuzak (hepsi ölçülerek bulundu):**
+1. `#navigator-toolbox` varsayılan olarak `#browser`'ın ALTINDA kalır; z-index 3 yalnızca yer imleri görünürken uygulanıyordu. Gizliyken şerit
+   fareyi hiç almıyordu (`elementsFromPoint(300,1)` -> `browser`). Toolbox'a her durumda `z-index:3` verildi (genişlemiş dikey çubuğun 4'ünün altında).
+2. `:hover` kilidiyle yapılan test (`InspectorUtils.addPseudoClassLock`) hit-testing'i atlar; bu yüzden ilk sürüm "çalışıyor" göründü ama gerçek
+   fare gelmiyordu. Doğrulama `elementsFromPoint` ile yapılmalı.
+3. Firefox'un kendi `#nav-bar` kuralı `transition: opacity .2s` verir ve bizimkini ezer (hesaplanan özellik `opacity` çıkar, kapanış anında olur,
+   gecikme işlemez). `transition` ve `transition-delay` bu yüzden `!important`.
+**Denenmedi:** gerçek fare imleci, açık bir menüyle fare çıkınca davranış, tam ekran. **Bilinen sınır:** pencere düğmeleri ve sürükleme
+alanı da nav-bar içinde olduğundan gizliyken üst şerit dışında erişilemez; açılıp kapanırken sayfa 33px kayar. Kapatmak için bloğun tamamı silinir.
 
 ## 5. Bellek betiği değişiklikleri (`tab_lifecycle.uc.js`)
 
+- **Yerleşince seyrek kontrol (`TICK_SETTLED_SECONDS`, 60):** Ana döngü (`TICK_SECONDS`, 1 sn) hiç durmuyordu. Ölçüm: tick başına maliyet
+  ~1-2 ms (~%0,3 CPU), yani asıl sorun değil, ama iş kalmayınca boşa çalışıyordu. Hiçbir sayfa görünür değilken ve tüm sekmeler derin uykudayken
+  (medya sekmeleri sayılmaz, boşaltılmışlar atlanır) aralık 60 sn'ye çıkar; pencere olayı (`sizemodechange/activate/focus`), sekme seçimi ya da
+  yerleşmemiş bir sekme görülünce hemen 1 sn'ye döner. `0` = kapalı. Bedel: boşta tekrar kırpmalar (dakika cinsinden) en çok 60 sn geç.
+  Küçültme -> yerleşme -> geri açma akışı 5 sn'lik denemeyle doğrulandı. **Düzenli 10 sn'lik CPU sıçramasının nedeni bu betik çıkmadı**
+  (betik kapalıyken de görülen patlamalar Firefox'a ait; betiğe ait olanlar yalnızca sekmeler arka plana düştükten sonraki ilk dakikada).
 - **Günlük kapalıyken dosyaya yazma:** `ENABLE_LOGGING: false` iken `memlog.txt`'ye yine satır düşüyordu (`yüklendi`,
   `durdu` ve hata kayıtları bayrağı atlıyordu). Kontrol günlük işlevinin kendisine taşındı; kapalıyken hiçbir şey
   yazılmaz, hatalar yalnızca Tarayıcı Konsolu'na gider.
 - **Ses çalan sekmenin süreci:** Eskiden hiç kırpılmıyordu, ama müzik/video açıkken bellek en çok o süreçte kalıyordu.
-  `TRIM_MEDIA_TAB_AFTER_HIDDEN_SECONDS` (10): Firefox arka plana gidince (hiçbir sayfa görünmüyor) bu kadar sonra bir kez;
-  öne gelince sayaç sıfırlanır. `TRIM_MEDIA_TAB_EVERY_SECONDS` (60): arka planda kalırken tekrar aralığı. `0` yapınca
-  özellik kapanır. **Gerçek ses/video ile denenmedi**, yalnızca söz dizimi ve mantık kontrol edildi.
+  `TRIM_MEDIA_TAB_AFTER_HIDDEN_SECONDS`: Firefox arka plana gidince (hiçbir sayfa görünmüyor) bu kadar sonra bir kez;
+  öne gelince sayaç sıfırlanır. `TRIM_MEDIA_TAB_EVERY_SECONDS`: arka planda kalırken tekrar aralığı. `0` yapınca
+  özellik kapanır. **Gerçek ses/video ile denenmedi**, ses durumu bir öznitelikle benzetilerek sınandı.
+
+### Süreç sınıfı başına akış (GC / CC / Minimize / Trim)
+
+Önceki sürümde kırpma kararları tetikleyicilerin içine dağılmıştı (sekme kırpma, ana süreç+GPU, genel küçültme, medya) ve
+`TRIM_HELPER_PROCESSES` / `TRIM_EXTENSION_PROCESS` gibi birkaç genel bayrak vardı. GC, CC ve minimize ise tek bir blok
+olarak ("Reclaim") çalışıyordu. Şimdi hepsi **tek bir akış motorundan** geçer:
+
+1. **Süreç sınıfları.** Her süreç bir sınıfa girer: `main`, `tab_background` (pasif sekme), `tab_media`, `tab_busy`
+   (yükleniyor), `tab_active` (görünen sekme ya da onunla süreç paylaşan), `gpu`, `rdd`, `socket`, `utility`, `extension`,
+   `spare` (sekmesiz boşta süreç), `other`. Süreç birden çok sekme barındırıyorsa en korumalı olan kazanır
+   (görünen > yüklenen > medya > gizli). Sınıflar her aşamadan önce yeniden belirlenir.
+2. **Dört iş, sınıf başına ayrı bayrak.** `PROCESS_ACTIONS[sınıf] = { gc, cc, minimize, trim }`. Uygulanabilirlik
+   teknik olarak sınırlıdır: `gc` ve `cc` yalnızca `main` (doğrudan) ve sekme sınıflarında (o sürece mesajla) vardır;
+   `minimize` sekme sınıflarında hedeflidir, diğer sınıflarda yalnızca **yayın** (memory-pressure bildirimi) iledir ve
+   tek bir sürece yöneltilemez; `trim` her sınıfta süreç kimliğiyle hedefli yapılır. Uygulanamayan kombinasyon tabloda
+   `true` olsa da yok sayılır.
+3. **Yayın kuralı.** Yayın herkese gittiği için, o anda çalışan herhangi bir sınıfın `minimize` değeri `false` ise
+   yayın gönderilmez (günlüğe yazılır). Örnek: ses çalarken `tab_media.minimize=false` olduğu için yayın atlanır.
+4. **Tek sıra.** Tetikleyiciler yalnızca hangi işlerin yapılabileceğini seçer; sırayı her zaman `FLOW_ORDER`
+   (varsayılan `gc, cc, minimize, trim`) belirler, listede olmayan iş hiç çalışmaz.
+5. **Tek kuyruk, onaylı aşamalar.** Akışlar tüm pencerelerde tek kuyrukta sırayla çalışır, iç içe geçmez. İçerik süreci
+   her aşamayı bitirince onay gönderir; bir sonraki aşama onay (ya da zaman aşımı) sonrası `FLOW_STAGE_GAP_MS` boşlukla
+   başlar. Her aşamadan önce sınıflar yeniden belirlenir: kullanıcı bir sekmeye döndüyse o sürece dokunulmaz, "hiçbir
+   sayfa görünmüyor" koşulu bozulduysa genel akış durur. Sayfa görünürken sekme dışı sınıflara (ana süreç, GPU ...)
+   hiç dokunulmaz.
+6. **Diğer ayarlar.** `KEEP_GPU_WHILE_PIP_OR_SHARING` (PiP/paylaşım varken GPU'ya iş yok), `ACTIVE_FLOW_EVERY_SECONDS`
+   (aktif sekme sürecine isteğe bağlı periyodik akış, varsayılan kapalı). `TRIM_HELPER_PROCESSES` ve
+   `TRIM_EXTENSION_PROCESS` kaldırıldı; yerlerini tablodaki `socket/rdd/utility/gpu/spare/other` ve `extension` satırları aldı.
+
+**Kullanıcı boşta kırpması (`ACTIVE_IDLE_SECONDS`, varsayılan 17):** Ana süreç ve GPU yalnızca sayfalar görünmüyorken (pencere küçük/örtülü)
+kırpılıyordu. Kullanırken de belleği kırpmak için sekme geçişi gibi meşgul anlar yerine **kullanıcı hareketsizken** kırpılır: pencere
+görünür, ama işletim sistemi düzeyinde boşta süresi (`nsIUserIdleService`) ≥ 17 sn. Yalnızca kırpma (GC/CC/minimize yok: yayın aktif sekmeyi
+de etkilerdi) ve yalnızca `main`/`gpu` için; `PROCESS_ACTIONS`'ta o sınıfın `trim` bayrağı kapalıysa atlanır. Boşta oturumu başına bir kez,
+hareket gelince oturum biter; hâlâ boştaysa `ACTIVE_IDLE_REPEAT_MINUTES` (5, 0 = tekrar yok) sonra yeniden. Akış her aşamadan önce hâlâ
+hareketsiz mi diye bakar, hareket geldiyse durur. Atlanır: ses çalıyorsa, PiP/ekran paylaşımı varsa (GPU), görünür sekme yükleniyorsa.
+Sessiz çalan GÖRÜNÜR bir video ayırt edilemez: böyle kullanıyorsanız `gpu.trim`'i kapatın. **Ölçüldü:** ana süreç çalışma kümesi 311 → 21 MB,
+GPU 229 → 0 MB; sonra ana süreç kullanımla ~80 MB'a döndü (kazanç geçici). **Denenmedi:** hareket sonrası ilk tıklamadaki gecikme
+(gerçek kullanımda hissedilir mi), uzun süreli kullanım.
+
+**Denendi (geçici profil, yerel HTTP sitesiyle, süreç sınıfları gerçek):** sınıflandırma (13 süreç: ana, GPU, rdd, ağ,
+yardımcı, uzantı, 3 boşta, 1 aktif, 3 pasif); pasif süreçte dört işin `FLOW_ORDER` sırasıyla çalışması; aktif sürecin
+korunması; bir bayrak kapatılınca o işin atlanması; sıra değişince ve işler listeden çıkarılınca davranış; iki akışın iç
+içe geçmemesi; sayfa görünürken ana/yardımcı sınıflara dokunulmaması; pencere küçükken tüm sınıfların işlenmesi
+(`gc`/`cc` ana + 4 pasif, `minimize` 13, `trim` 10); ses durumu (öznitelikle benzetildi) `tab_media` sınıfına alınıp
+yayının atlanması; PiP durumunda GPU'nun atlanması; akış sürerken pencere öne gelince akışın durması; gerçek
+zamanlayıcı zinciri (uyku, derin uyku, sekme kırpma) ve aktif sekmeyle süreç paylaşılınca kırpmanın ertelenmesi; onayların
+gerçekten gelmesi (3 aşama 252 ms). **Denenmedi:** gerçek ses/video ve gerçek PiP, `spare` süreçlerinin kırpılması
+(testte `minimize` sayıldı ama `trim` sayısına girmedi, süreç o arada değişmiş olabilir), uzun süreli günlük kullanım,
+bellek üzerindeki etkinin ölçümü.
 
 ## 6. Test yöntemi
 
@@ -214,3 +232,80 @@ değişmedi (bkz. bölüm 7). Son ikisinin neden sıfırlandığına dair bir no
 yazıldı.
 
 Tam bir geri yükleme için profili yedeklemek gerekir; bu liste yalnızca neyin değiştiğini hatırlatır.
+
+## 10. Sağ tık çevirisi: DeepL ya da Google (`translate.uc.js`)
+
+**İstek:** Firefox'un yerleşik çevirisi (yerel modeller) beğenilmedi; DeepL kullanılsın. Resmi DeepL uzantısı sitelerde
+bozulma yapıyordu (bir paragrafa çift tıklayınca sayfa başa atlıyordu). Sonra servis DeepL ya da Google arasında
+dinamik seçilebilsin istendi.
+
+**Neden yerleşik çeviri değil:** Firefox'un yerleşik çevirisi tamamen cihazda çalışır; `browser.translations.*` ayarlarında
+servis adresi ya da anahtar seçeneği yoktur.
+
+**Tasarım**
+- Sağ tık menüsünde dört madde, "Denetle" grubunun sonunda, kendi ayracı olmadan: "Seçili metni çevir", "Sayfayı çevir",
+  "Orijinal sayfayı göster" ve "Çeviri servisi" alt menüsü (DeepL / Google, radyo). Etiketler seçili servisin adını taşır
+  (örn. "Sayfayı Google ile çevir"); anahtar yoksa "(web)" eklenir, çünkü servisin web sitesine gidilecektir.
+- **Servisler birer modül:** her biri `translate(metinler)`, istek sınırları (DeepL en çok 45 metin / 60 bin karakter, Google
+  100 metin / 15 bin karakter), anahtarsız yedekler ve hata iletileri tanımlar. DeepL: `POST /v2/translate`, başlık
+  `Authorization: DeepL-Auth-Key`. Google: Cloud Translation Basic (v2) `POST /language/translate/v2`, başlık `X-Goog-Api-Key`,
+  `format: text` (HTML kaçışı yok). Hedef dil DeepL kodu biçiminde tutulur (TR, EN-US, ZH-HANS ...) ve Google'a çevrilir
+  (EN-US -> en, ZH-HANS -> zh-CN).
+- **Sayfaya olay dinleyicisi eklenmez.** Çerçeve betiği yalnızca mesajla çalışır; tek istisna gezinmeyi anlamak için `pagehide`
+  gözlemidir. Sayfa çevirisi görünür ve çevrilebilir metin düğümlerini (`script/style/code/pre/textarea`, `translate="no"`,
+  `.notranslate`, gizli öğeler, yalnızca rakam/noktalama olanlar hariç) toplar, servis sınırlarına uygun istekler hâlinde gönderir
+  ve sonucu aynı düğümlere yazar. Düğümlerin kendisi korunur, yalnızca metin değişir; sayfanın dinleyicileri ve düzeni bozulmaz.
+  Orijinal metin saklanır, "Orijinal sayfayı göster" geri koyar.
+- Seçili metin çevirisi küçük bir panelde, **seçimin hemen altında** (altı dar ise üstünde) açılır; başlıkta servis adı ve hedef dil,
+  kopyala ve kapat simgeleri. Konum, seçimin görünür alandaki satır kutularından alınır; metin kutusu içindeki seçimde konum
+  alınamaz, panel üstte ortada açılır.
+- **Ayarlar** (`about:config` > `extensions.translate-lite.*`): `provider` (deepl | google), `targetLang` (varsayılan TR),
+  `deeplApiKey` (`:fx` ile bitiyorsa ücretsiz plan), `googleApiKey`, `deeplEndpoint` / `googleEndpoint` (boşsa resmi adres),
+  `maxChars` (sayfa başına karakter sınırı, kota koruması, varsayılan 40000). Anahtarlar profilin `prefs.js` dosyasında kalır,
+  **depoya girmez**. Önceki sürümün `extensions.deepl-lite.*` değerleri ilk çalışmada bir kez taşınır.
+- **Kota dolunca otomatik geçiş** (`autoFallback`, varsayılan açık): seçili servisin kotası dolarsa (DeepL 456; Google 429 ya da kota/oran
+  sınırı hatası) öbür servise **kalıcı** geçilir ve istek orada tekrarlanır; seçimi istediğiniz zaman "Çeviri servisi" menüsünden geri alırsınız.
+  Öbür serviste anahtar yoksa onun web yolu kullanılır. Bu geçiş istek başına en çok bir kez yapılır (döngü yok).
+- **Web paneli** (`webMode: panel`; DeepL anahtarsız yolu, ya da Google engel görünce): anahtar yokken seçili metin için servisin kendi sitesi, seçimin
+  yanında küçük bir panelde (gömülü tarayıcı) gösterilir. Sayfa içeriği okunmaz ya da kazınmaz. Paneldeki sayfaya yalnızca üst kısmı
+  gizleyen bir stil eklenir (logo, menüler, giriş, çeviri türü sekmeleri) ve ana içerik ölçülerek yukarı çekilir; başka sekmelerde ve
+  servisin kendi sitesinde hiçbir şey değişmez. Bu en iyi çabadır: servislerin sayfa yapısı değişirse üst kısım görünür kalabilir.
+  Panel kapanınca tarayıcı atılır. "Sekmede aç" simgesi aynı adresi sekmede açar.
+- **Anahtar yoksa (resmi siteler):** seçili metin için DeepL'in web çevirmeni ya da Google Translate sitesi, metin hazır dolu
+  olarak yeni sekmede açılır. Sayfa çevirisi için Google'ın kendi web çeviri hizmeti (`translate.goog`) kullanılır: sayfa o
+  adreste yeniden açılır, oturum gerektiren sayfalarda çalışmaz. DeepL'in anahtarsız sayfa yolu yoktur.
+
+**Gizli web motoru (Google, anahtarsız, `webMode: auto` varsayılan):** Seçili metin için Google Translate SİTESİ ekran dışı, gizli bir
+tarayıcıda (-10000px) normal adresiyle (metin hazır dolu) açılır, çevirinin çıktığı alan sayfadan okunur ve sonuç kendi panelimizde
+(başlık "Google (web) · otomatik -> TR") gösterilir. Yani site kullanılır, yalnızca ekranda gösterilmez. Kurallar:
+- Her seçimde tek istek, sırayla (tek tarayıcı); aynı tarayıcı yeniden kullanılır (ilk çeviri ~3,5 sn, sonrakiler ~2,5 sn); boşta 30 sn
+  sonra tarayıcı atılır (içerik süreci bellek tutmasın). Metin 4000 karakterle sınırlı (adres uzunluğu).
+- Sayfa yapısına bağlıdır: çeviri `span.ryNqvb` öğelerinin kapsayıcısından (`span.HwtZe`) okunur. Google bu yapıyı değiştirirse
+  okuma boş döner, 18 sn sonra zaman aşımı olur ve görünür panele düşülür.
+- **Engel aşılmaya çalışılmaz.** Sayfa `google.com/sorry` ya da reCAPTCHA gösterirse gizli motor bırakılır, görünür panel açılır
+  (doğrulamayı kullanıcı kendisi geçebilir) ve 10 dakika boyunca gizli motor denenmez.
+- Yalnızca seçili metin içindir. Sayfa çevirisi (çok sayıda parça) bu yolla yapılmaz.
+- **Önemli:** Bu, sitenin otomatik okunmasıdır (API değil). Google'ın hizmet koşulları otomatik erişimi kısıtlayabilir; bu yolun
+  uygunluğu ve sürekliliği garanti değildir (denemelerde `translate.google.com/m` adresi doğrulama sayfasına düştü, bu yüzden
+  kullanılmadı). Koşullardan ve kesintiden bağımsız olmak için resmi API anahtarı (`googleApiKey`) kullanılmalıdır.
+- `webMode: hidden` yalnızca gizli motoru kullanır (hata olursa panele düşmez); `panel` siteyi görünür panelde gösterir; `tab` yeni sekme.
+  DeepL için gizli motor yoktur (siteyi görünür panelde gösterir).
+
+**Anahtarsız (resmi API'siz) çeviri neden yok:** Resmi DeepL uzantısı DeepL'in kendi web arka ucunu kullanır; Google için de
+belgesiz, ücretsiz bir uç nokta (`client=gtx`) yaygın olarak kullanılır. Üçüncü taraf bir betiğin bu belgesiz uç noktalara
+bağlanması servislerin kullanım koşullarının dışındadır, hız sınırına ve IP engeline takılır ve her an bozulabilir. Bu yüzden
+resmi API'ler ve servislerin kendi web siteleri seçildi. DeepL API anahtarı ücretsiz çeviri hesabından ayrı bir plandır
+(DeepL API Free); Google Cloud Translation anahtarı için bir Google Cloud projesi ve faturalandırma hesabı gerekir (aylık
+ücretsiz kota var). Plan ve kayıt koşullarını servislerin sitelerinden kontrol edin.
+
+**Denendi** (gerçek servislere değil, yerel sahte DeepL ve Google sunucularına; yani gerçek servislere istek ATILMADI):
+iki servisle sayfa çevirisi (yalnızca görünür/çevrilebilir metinler gitti, 6 parça), sayfa yapısı korunarak yazıldı ve
+"orijinali göster" birebir geri verdi; servis değişince doğru uç noktaya ve doğru dil koduna (EN-US -> en) gidildi; seçili
+metin paneli servis adını ve hedef dili gösterdi; yanlış anahtarda hata iletisi; anahtarsız yedekler (DeepL web adresi,
+Google Translate sitesi, translate.goog adresinin biçimi); menü etiketleri, radyo işareti ve menü sırası. **Denenmedi:**
+gerçek DeepL ve Google yanıtları ve kota davranışı, `translate.goog` ile gerçek sayfa açılması, tek sayfalı uygulamalar
+ve çok büyük sayfalar.
+
+**Bilinen sınırlar:** Sayfa çevirisi tek seferliktir; sonradan gelen içerik çevrilmez. Kalın/bağlantı gibi satır içi
+öğelerle bölünmüş cümleler parça parça çevrilir, servis cümlenin tamamını görmediği için kalite düşebilir. Düğümleri
+koruyup bağlamı artırmak mümkün ama henüz yapılmadı.

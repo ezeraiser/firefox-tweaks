@@ -12,7 +12,7 @@
 //           4) Bellek ilk temizlikten beri belirgin büyüdüyse bir kez daha GC + CC + heap-minimize.
 //  +60 sn   5) ANA SÜREÇ + GPU kırpılır (derin uykudan 60 sn sonra; yalnızca hiçbir sayfa görünmüyorsa).
 //  180 sn   6) O sekmenin süreci kırpılır (working set: sayfalar RAM'den çıkar, içerik kalır).
-//  300 sn   7) Sekme BOŞALTILIR (discard): süreç kapanır, bellek tamamen serbest kalır; tıklayınca yeniden yüklenir.
+//  900 sn   7) Sekme BOŞALTILIR (discard): süreç kapanır, bellek tamamen serbest kalır; tıklayınca yeniden yüklenir.
 //  + Pencere küçültülünce (hiçbir sayfa görünmüyorsa) "genel küçültme" SIRASI: 1) hemen genel GC/CC/memory temizliği (kırpma YOK),
 //    2) tüm sekmeler uykuya, 3) derin uykuya girer (yukarıdaki çizelge, seçili sekme dahil), 4) EN SONDA tüm süreçler kırpılır;
 //    boşta kaldıkça periyodik tekrar (önce temizlik, sonra kırpma).
@@ -49,14 +49,14 @@
     //   [4 SEKME KIRPMA]  TAB_TRIM_AFTER_SECONDS (180 sn) --> o sekmenin süreci kırpılır
     //        |
     //        v
-    //   [5 BOŞALTMA]      DISCARD_AFTER_SECONDS (300 sn) --> sekme boşaltılır (DISCARD_* kuralları geçerse)
+    //   [5 BOŞALTMA]      DISCARD_AFTER_SECONDS (900 sn) --> sekme boşaltılır (DISCARD_* kuralları geçerse)
     //
     //   [6 GENEL KÜÇÜLTME] pencere küçülünce (hiçbir sayfa görünmüyorsa), yukarıdaki zincirle BİRLİKTE:
     //        MINIMIZE_RECLAIM_AFTER_SECONDS (3 sn): hemen genel GC/CC/memory (kırpma YOK)
     //          --> sekmeler [1 UYKU] ve [2 DERİN UYKU] adımlarından geçer (seçili sekme dahil)
     //          --> DEEP_SLEEP_AFTER_SECONDS + MINIMIZE_TRIM_AFTER_DEEP_SECONDS (60+10 sn): TÜM süreçler kırpılır
     //          --> MINIMIZE_RETRIM_MINUTES (10 dk): boşta kaldıkça önce temizlik, sonra kırpma tekrarlanır
-    //        Kırpmanın kapsamı: TRIM_HELPER_PROCESSES, TRIM_EXTENSION_PROCESS; medya varken: TRIM_OTHERS_WHILE_MEDIA_PLAYS.
+    //        Kırpmanın kapsamı: PROCESS_ACTIONS (süreç sınıfı başına); medya varken: TRIM_OTHERS_WHILE_MEDIA_PLAYS.
     //
     //   Sekme tekrar görününce (ya da pencere geri açılınca) o sekmenin zinciri iptal olur, uyku çözülür, süre sıfırdan başlar.
     const CONFIG = {
@@ -69,7 +69,15 @@
          * sapma). Hafif bir iştir; değiştirmenize gerek yok.
          * TETİKLER: aşağıdaki her adımı (adımlar bu kontrolde süresi dolmuş mu diye bakılarak çalışır).
          */
-        TICK_SECONDS: 1,
+        TICK_SECONDS: 3,
+
+        /**
+         * Her şey yerleştiğinde (hiçbir sayfa görünür değil ve tüm sekmeler derin uykuda/medya) kontrol bu kadar saniyede bir
+         * yapılır; yapılacak yeni bir iş kalmadığı için 1 sn'lik döngü boşa çalışırdı. Pencere öne gelince, sekme seçilince
+         * ya da yerleşmemiş bir sekme görülünce hemen TICK_SECONDS'a döner. 0 = bu davranış kapalı. Sınır: boşta tekrar
+         * (ACTIVE_IDLE_REPEAT_MINUTES, MINIMIZE_RETRIM_MINUTES) en çok bu kadar saniye gecikir.
+         */
+        TICK_SETTLED_SECONDS: 60,
 
         /**
          * true: Ses çalan / Picture-in-Picture / ekran-kamera paylaşan sekmeler zincirin HİÇBİR adımına (uyku, GC,
@@ -104,10 +112,10 @@
          * ara sıra çalışmak ister. 0 = uykuda da hiç uyandırma. Derin uykuda uyandırma HİÇ yoktur.
          * TETİKLEYEN: [1] uyku. DURDURAN: [2] derin uyku.
          */
-        SLEEP_WAKE_INTERVAL_SECONDS: 20,
+        SLEEP_WAKE_INTERVAL_SECONDS: 0,
 
         /** Uyanık kalma süresi (saniye). Yalnızca SLEEP_WAKE_INTERVAL_SECONDS > 0 ise kullanılır. */
-        SLEEP_WAKE_DURATION_SECONDS: 2,
+        SLEEP_WAKE_DURATION_SECONDS: 0,
 
         /**
          * Bu sitelerin sekmeleri ASLA uyutulmaz (alt alan adları dahil: "google.com" yazarsanız mail.google.com da
@@ -125,7 +133,7 @@
          * TETİKLEYEN: sekmenin [1] uykudan sonra da görünmez kalması. TETİKLER: DEEP_RECLAIM_IF_GROWN_MB (ikinci
          * temizlik), [3] ana süreç + GPU sayacı (MAIN_GPU_TRIM_AFTER_DEEP_SECONDS) ve [6]'daki genel kırpma süresi.
          */
-        DEEP_SLEEP_AFTER_SECONDS: 60,
+        DEEP_SLEEP_AFTER_SECONDS: 30,
 
         /**
          * Derin uykuya geçerken ikinci bellek temizliği yalnızca, sürecin belleği ilk temizlikten (RECLAIM_ON_SLEEP)
@@ -133,7 +141,7 @@
          * sekmeye dönünce JIT kodunu soğuk bırakıp ilk anı yavaşlatır. 0 = her zaman yap.
          * TETİKLEYEN: [2] derin uyku (RECLAIM_ON_SLEEP ölçümüyle kıyaslar).
          */
-        DEEP_RECLAIM_IF_GROWN_MB: 8,
+        DEEP_RECLAIM_IF_GROWN_MB: 20,
 
         // ==================================================================
         // 3) ANA SÜREÇ + GPU KIRPMA - derin uykudan MAIN_GPU_TRIM_AFTER_DEEP_SECONDS sonra
@@ -146,10 +154,10 @@
          * kullanırken ana süreç ve GPU kırpılırsa takılma olur, bu yüzden o durumda sayaç sessizce iptal edilir.
          * TETİKLEYEN: [2] derin uyku. Medya çalarken TRIM_OTHERS_WHILE_MEDIA_PLAYS'a bağlıdır.
          */
-        MAIN_GPU_TRIM_AFTER_DEEP_SECONDS: 60,
+        MAIN_GPU_TRIM_AFTER_DEEP_SECONDS: 10,
 
         /** İki ana süreç + GPU kırpması arasında en az kaç saniye geçsin? (Sık sık kırpmayı önler; [6] genel kırpma da sayılır.) */
-        MAIN_GPU_MIN_INTERVAL_SECONDS: 300,
+        MAIN_GPU_MIN_INTERVAL_SECONDS: 180,
 
         // ==================================================================
         // 4) SEKME SÜRECİ KIRPMA - sekmeden ayrıldıktan TAB_TRIM_AFTER_SECONDS sonra
@@ -160,7 +168,7 @@
          * içerik kaybolmaz. Süreç görünür/medya sekmeyle paylaşılıyorsa atlanır (30 sn sonra yeniden denenir).
          * 0 = kapalı. TETİKLEYEN: sekmenin [2] derin uykudan sonra da görünmez kalması (bellek önce temizlenmiş olur).
          */
-        TAB_TRIM_AFTER_SECONDS: 120,
+        TAB_TRIM_AFTER_SECONDS: 10,
 
         // ==================================================================
         // 5) BOŞALTMA - sekmeden ayrıldıktan DISCARD_AFTER_SECONDS sonra
@@ -172,7 +180,7 @@
          * 0 = boşaltma kapalı. Boşaltılan sekmenin zinciri biter; tekrar açılınca sıfırdan başlar.
          * TETİKLEYEN: [4] sekme kırpmadan sonra da sekmenin görünmez kalması. Aşağıdaki DISCARD_* kuralları süzer.
          */
-        DISCARD_AFTER_SECONDS: 300,
+        DISCARD_AFTER_SECONDS: 900,
 
         /** true: Sabitlenmiş sekmeler asla boşaltılmaz (uyku/kırpma yine uygulanır). */
         DISCARD_SKIP_PINNED: true,
@@ -234,12 +242,6 @@
          */
         MINIMIZE_RETRIM_MINUTES: 3,
 
-        /** true: Genel kırpmada ağ/ses/depolama gibi yardımcı süreçler de kırpılır. false: yalnızca ana + GPU + sekme/uzantı süreçleri. */
-        TRIM_HELPER_PROCESSES: true,
-
-        /** true: Genel kırpmada uzantı sürecini (uBlock vb.) de kırpar. */
-        TRIM_EXTENSION_PROCESS: true,
-
         /**
          * true: Ses çalan bir sekme VARKEN de [3] ana süreç + GPU kırpması ve [6] genel küçültme devam eder; yalnızca
          * O MEDYA SEKMESİNİN SÜRECİ atlanır. PiP/ekran paylaşımı varsa GPU da atlanır (görüntü işleniyor). false: medya
@@ -267,7 +269,102 @@
         TRIM_MEDIA_TAB_EVERY_SECONDS: 120,
 
         // ==================================================================
-        // 7) GÜNLÜK
+        // 7) AKIŞ - süreç sınıfı başına GC / CC / Minimize / Trim, TEK sıra, TEK kuyruk
+        // ==================================================================
+        //
+        // Her süreç bir SINIFA girer; hangi işin hangi sınıfta yapılacağı PROCESS_ACTIONS tablosundadır.
+        //   main            Firefox'un ana (parent) süreci
+        //   tab_background  yalnızca gizli, medyasız, yüklenmeyen sekmelerin içerik süreci (PASİF sekme)
+        //   tab_media       ses çalan / PiP / ekran paylaşan gizli sekmenin süreci
+        //   tab_busy        yüklenmekte olan sekmenin süreci
+        //   tab_active      EKRANDA GÖRÜNEN sekmeyi (ya da onunla süreç paylaşan sekmeyi) barındıran süreç (AKTİF sekme)
+        //   gpu, rdd (medya çözücü), socket (ağ), utility (ses vb.), extension (uzantı süreci)
+        //   spare           sekmesi olmayan boşta içerik süreci (önceden ayrılmış)
+        //   other           yukarıdakilere girmeyen diğer süreçler (inference, gmplugin ...)
+        //
+        // Bir süreç birden çok sekme barındırıyorsa sınıfı en "korumalı" olandır: görünen > yüklenen > medya > gizli.
+        //
+        // İşler ve nereye uygulanabilir (uygulanamayan kombinasyonlar tabloda true olsa da yok sayılır):
+        //   gc        çöp toplama     main (doğrudan), tab_* (o sürece mesajla)          -> diğerlerinde YOK
+        //   cc        döngü toplama   main (doğrudan), tab_* (o sürece mesajla)          -> diğerlerinde YOK
+        //   minimize  heap-minimize   tab_* (o sürece mesajla, hedefli); diğer tüm sınıflar yalnızca YAYIN ile
+        //   trim      çalışma kümesi  her sınıf (süreç kimliğiyle, hedefli)
+        // YAYIN: memory-pressure bildirimi TÜM süreçlere gider, tek bir sürece yöneltilemez. Bu yüzden yayın, yalnızca
+        // o anda çalışan HİÇBİR sınıf "minimize: false" değilse gönderilir; aksi halde atlanır ve günlüğe yazılır.
+        // Örnek: medya çalarken tab_media.minimize=false olduğundan yayın atlanır, medya süreci etkilenmez.
+        //
+        // AKIŞ: bir tetikleyici (uyku, derin uyku, sekme kırpma, genel küçültme, tekrar ...) hangi işlerin YAPILABİLECEĞİNİ
+        // seçer; işlerin sırasını her zaman FLOW_ORDER belirler. Akışlar tek bir kuyrukta sırayla çalışır (iki akış asla iç
+        // içe geçmez, birinin aşaması bitmeden diğerininki başlamaz). Her aşama, o aşamayı yapan süreçlerden onay gelene
+        // (ya da zaman aşımına) kadar beklenir, aşamalar arasında FLOW_STAGE_GAP_MS boşluk bırakılır ve her aşamadan önce
+        // süreç sınıfları YENİDEN belirlenir: kullanıcı bir sekmeye döndüyse o sürece dokunulmaz, "hiçbir sayfa görünmüyor"
+        // koşulu bozulduysa genel akış durur.
+
+        /**
+         * Aşamaların sırası. Listede olmayan iş HİÇ yapılmaz (tüm sınıflarda kapalı). Örnek: ['gc','minimize','trim']
+         * CC'yi kapatır; ['trim','gc'] önce kırpar sonra çöp toplar (önerilmez: kırpılan sayfalar GC ile geri dolar).
+         * Önerilen sıra: gc -> cc -> minimize -> trim (önce çöp at, sonra bellek serbest bırak, en son RAM'den çıkar).
+         */
+        FLOW_ORDER: ['gc', 'cc', 'minimize', 'trim'],
+
+        /** Aşamalar arası bekleme (ms). */
+        FLOW_STAGE_GAP_MS: 300,
+
+        /** Bir süreçten aşama onayı için en çok bekleme (ms); süreç yanıt vermezse akış bu kadar sonra devam eder. */
+        FLOW_ACK_TIMEOUT_MS: 4000,
+
+        /** Minimize YAYINI sonrası beklenecek süre (ms). Yayının bitiş onayı yoktur. */
+        FLOW_BROADCAST_WAIT_MS: 3000,
+
+        /** true: PiP ya da ekran paylaşımı varken GPU sürecine hiçbir iş uygulanmaz (görüntü işleniyor). */
+        KEEP_GPU_WHILE_PIP_OR_SHARING: true,
+
+        /**
+         * 0 = kapalı. > 0: Firefox kullanılırken (bir sayfa görünür), bu kadar saniyede bir AKTİF sekmenin sürecine
+         * PROCESS_ACTIONS.tab_active'te açık olan işler FLOW_ORDER sırasıyla uygulanır. Varsayılan tablo tab_active için
+         * hepsini kapatır; yalnızca bilerek açarsanız anlamlıdır. Kullanırken kırpma/GC takılma yapabilir.
+         */
+        ACTIVE_FLOW_EVERY_SECONDS: 0,
+
+        /**
+         * Kullanıcı BOŞTAYKEN (pencere görünür ama fare/klavye bu kadar saniyedir hareketsiz) ana süreç ve GPU kırpılır;
+         * 0 = kapalı. Sekme geçişi gibi meşgul anlarda DEĞİL, hareketsizken yapılır: etkileşim olmadığı için takılma görünmez ve
+         * hareket gelince sayfalar çoğunlukla yumuşak hatayla (diskten okumadan) geri döner. Yalnızca PROCESS_ACTIONS'ta main/gpu
+         * için trim açıksa çalışır (yalnızca kırpma; GC/CC/minimize bu yolda yok, yayın aktif sekmeyi de etkilerdi).
+         * Atlanır: ses çalıyorsa, PiP/ekran paylaşımı varsa (GPU), görünür sekme yükleniyorsa. Sessiz çalan GÖRÜNÜR bir videoyu
+         * ayırt edemez: o durumda GPU'yu kırpmak görüntüyü bozabilir, böyle kullanıyorsanız gpu.trim'i kapatın.
+         * TETİKLEYEN: kullanıcının bu kadar saniye hareketsiz kalması (işletim sistemi düzeyinde boşta süresi).
+         */
+        ACTIVE_IDLE_SECONDS: 17,
+
+        /**
+         * Boşta kalma sürerse ana süreç + GPU kaç dakikada bir TEKRAR kırpılsın? 0 = her boşta oturumunda yalnızca bir kez
+         * (hareket gelince oturum biter, bir sonraki boşta kalışta yeniden kırpılır).
+         */
+        ACTIVE_IDLE_REPEAT_MINUTES: 5,
+
+        /**
+         * Sınıf -> { gc, cc, minimize, trim }. Varsayılanlar eski davranışı korur: pasif sekme süreçlerinde dört iş de açık,
+         * medya sekmesinde yalnızca trim (yalnızca arka planda, TRIM_MEDIA_TAB_* zamanlarıyla), aktif ve yüklenen
+         * sekmelerde hiçbiri; ana süreç ve yardımcı süreçlerde ise hiçbir sayfa görünmüyorken uygulanır.
+         */
+        PROCESS_ACTIONS: {
+            main:           { gc: true,  cc: true,  minimize: true,  trim: true  },
+            tab_background: { gc: true,  cc: true,  minimize: true,  trim: true  },
+            tab_media:      { gc: false, cc: false, minimize: false, trim: true  },
+            tab_busy:       { gc: false, cc: false, minimize: false, trim: false },
+            tab_active:     { gc: false, cc: false, minimize: false, trim: false },
+            gpu:            { gc: false, cc: false, minimize: true,  trim: true  },
+            rdd:            { gc: false, cc: false, minimize: true,  trim: true  },
+            socket:         { gc: false, cc: false, minimize: true,  trim: true  },
+            utility:        { gc: false, cc: false, minimize: true,  trim: true  },
+            extension:      { gc: false, cc: false, minimize: true,  trim: true  },
+            spare:          { gc: false, cc: false, minimize: true,  trim: true  },
+            other:          { gc: false, cc: false, minimize: true,  trim: true  }
+        },
+
+        // ==================================================================
+        // 8) GÜNLÜK
         // ==================================================================
 
         /** true: Yaptığı işleri ve hataları chrome\memlog.txt dosyasına yazar. false: dosyaya hiçbir şey yazılmaz (hatalar yalnızca Tarayıcı Konsolu'na gider). */
@@ -355,15 +452,15 @@
             } catch (e) { Cu.reportError('TabLifecycle unfreeze: ' + e); }
             frozenId = 0;
         });
-        addMessageListener('TabLifecycle:Reclaim', () => {
-            try {
-                Cu.forceGC();
-                Cu.forceCC();
-                Cu.forceGC();
-                // about:memory "Minimize memory usage" ile aynı bildirim, ama yalnızca bu süreçte
-                Services.obs.notifyObservers(null, 'memory-pressure', 'heap-minimize');
-            } catch (e) { Cu.reportError('TabLifecycle reclaim: ' + e); }
+        // Aşamalar ayrı mesajlardır (akış motoru sırayı belirler); her biri bitince onay gönderir.
+        const stage = (name, fn) => addMessageListener('TabLifecycle:' + name, m => {
+            try { fn(); } catch (e) { Cu.reportError('TabLifecycle ' + name + ': ' + e); }
+            sendAsyncMessage('TabLifecycle:Ack', { id: m.data && m.data.id });
         });
+        stage('Gc', () => Cu.forceGC());
+        stage('Cc', () => Cu.forceCC());
+        // about:memory "Minimize memory usage" ile aynı bildirim, ama yalnızca bu süreçte
+        stage('Minimize', () => Services.obs.notifyObservers(null, 'memory-pressure', 'heap-minimize'));
     `;
     try {
         window.messageManager.loadFrameScript(
@@ -450,8 +547,10 @@
                     let pid;
                     try { pid = c.currentWindowGlobal && c.currentWindowGlobal.domProcess && c.currentWindowGlobal.domProcess.osPid; } catch (e) {}
                     if (!pid || pid === Services.appinfo.processID) continue;
-                    const cur = procs.get(pid) || { active: false };
+                    const cur = procs.get(pid) || { active: false, visible: false, busy: false, media: false, tab: null };
                     if (reason) cur.active = true;
+                    if (reason === 'visible') cur.visible = true; else if (reason === 'busy') cur.busy = true; else if (reason) cur.media = true;
+                    if (!cur.tab) cur.tab = tab;
                     procs.set(pid, cur);
                 }
             }
@@ -482,6 +581,147 @@
     function send(tab, name) {
         try { tab.linkedBrowser.messageManager.sendAsyncMessage('TabLifecycle:' + name); return true; }
         catch (e) { logErr('mesaj hatası', name, e); return false; }
+    }
+
+    // ===========================================
+    // AKIŞ MOTORU: süreç sınıfı başına GC / CC / Minimize / Trim (ayrıntı: CONFIG > 7) AKIŞ)
+    // ===========================================
+    const CU = (typeof Cu !== 'undefined') ? Cu : Components.utils;
+    // İşletim sistemi düzeyinde kullanıcı boşta süresi (ms); denemeler için g.idleOverride ile değiştirilebilir
+    const idleService = Cc['@mozilla.org/widget/useridleservice;1'].getService(Ci.nsIUserIdleService);
+    const getIdleMs = () => (g.idleOverride != null ? g.idleOverride : idleService.idleTime);
+
+    // Aşama onayları: içerik süreci işi bitirince 'TabLifecycle:Ack' gönderir; mesaj sekmenin penceresine gelir.
+    let ackSeq = 0;
+    const acks = new Map();
+    window.messageManager.addMessageListener('TabLifecycle:Ack', msg => {
+        const done = acks.get(msg.data && msg.data.id);
+        if (done) done();
+    });
+    function sendWait(tab, name) {
+        return new Promise(resolve => {
+            const id = ++ackSeq;
+            let timer = 0;
+            const done = () => { acks.delete(id); window.clearTimeout(timer); resolve(); };
+            timer = window.setTimeout(done, CONFIG.FLOW_ACK_TIMEOUT_MS);
+            acks.set(id, done);
+            try { tab.linkedBrowser.messageManager.sendAsyncMessage('TabLifecycle:' + name, { id }); }
+            catch (e) { logErr('mesaj hatası', name, e); done(); }
+        });
+    }
+    // Mesaj, sekmenin kendi penceresinin kayıt defteriyle beklenir (çok pencerede onay o pencereye gelir).
+    function sendWaitVia(tab, name) {
+        const w = tab.ownerGlobal;
+        const t = w && w.TabLifecycle;
+        return t && t.sendWait ? t.sendWait(tab, name) : Promise.resolve();
+    }
+
+    const isTabClass = cls => cls.startsWith('tab_');
+    // Bir işin bir sınıfta nasıl yapılacağı: 'direct' (bu süreçte), 'message' (o sürece mesajla), 'broadcast', 'pid' ya da null (yok)
+    function capability(cls, stage) {
+        if (stage === 'trim') return 'pid';
+        if (cls === 'main') return stage === 'minimize' ? 'broadcast' : 'direct';
+        if (isTabClass(cls)) return 'message';
+        return stage === 'minimize' ? 'broadcast' : null;
+    }
+    function actionOn(cls, stage) {
+        const row = CONFIG.PROCESS_ACTIONS && CONFIG.PROCESS_ACTIONS[cls];
+        return !!(row && row[stage] && capability(cls, stage));
+    }
+
+    /** Tüm süreçleri sınıflara ayırır (her aşamadan önce yeniden çağrılır). */
+    async function classify() {
+        const s = snapshotAll();
+        const info = await ChromeUtils.requestProcInfo();
+        const list = [{ pid: info.pid, cls: 'main', type: 'parent', tab: null }];
+        for (const c of info.children) {
+            const p = s.procs.get(c.pid);
+            let cls;
+            if (p) cls = p.visible ? 'tab_active' : p.busy ? 'tab_busy' : p.media ? 'tab_media' : 'tab_background';
+            else if (['gpu', 'rdd', 'socket', 'utility', 'extension'].includes(c.type)) cls = c.type;
+            else if (/^(web|file|privileged|withCoopCoep|preallocated|inference)/.test(c.type || '')) cls = 'spare';
+            else cls = 'other';
+            list.push({ pid: c.pid, cls, type: c.type, tab: p ? p.tab : null });
+        }
+        return { list, snap: s };
+    }
+
+    /**
+     * Tek bir akışı çalıştırır. opts: { reason, stages (yapılabilecek işler; sıra FLOW_ORDER'dan gelir),
+     * pids (yalnızca bu süreçler) | classes (yalnızca bu sınıflar), needIdle (hiçbir sayfa görünürken çalışma) }.
+     * Sonuç: { counts, pids (iş uygulanan süreçler), protectedPids (sınıfı korunduğu için atlananlar) }.
+     */
+    async function runFlow(o) {
+        const stages = CONFIG.FLOW_ORDER.filter(s => o.stages.includes(s));
+        const res = { counts: {}, pids: new Set(), protectedPids: new Set(), notes: [] };
+        log(`AKIŞ başladı (${o.reason}): ${stages.join(' > ')}`);
+        let first = true;
+        for (const stage of stages) {
+            if (!first) await new Promise(r => window.setTimeout(r, CONFIG.FLOW_STAGE_GAP_MS));
+            first = false;
+            const { list, snap: s } = await classify();
+            const idle = quickState().allIdle;
+            // Kullanıcı-boşta akışı: her aşamadan önce hâlâ hareketsiz mi diye bak, hareket geldiyse dur
+            const userIdle = !!o.userIdleMs && getIdleMs() >= o.userIdleMs;
+            if (o.userIdleMs && !userIdle) { res.notes.push('kullanıcı hareket etti, akış durdu'); log(`AKIŞ durdu (${o.reason}): kullanıcı hareket etti, aşama: ${stage}`); break; }
+            if (o.needIdle && !idle) { res.notes.push('sayfa görünür oldu, akış durdu'); log(`AKIŞ durdu (${o.reason}): bir sayfa görünür oldu, aşama: ${stage}`); break; }
+            const keepGpu = CONFIG.KEEP_GPU_WHILE_PIP_OR_SHARING && (s.mediaKinds.has('pip') || s.mediaKinds.has('sharing'));
+            const scoped = list.filter(t => (!o.pids || o.pids.has(t.pid)) && (!o.classes || o.classes.has(t.cls)));
+            for (const t of scoped) if (t.cls === 'tab_active' || t.cls === 'tab_busy') res.protectedPids.add(t.pid);
+            // Sayfa görünürken ana/yardımcı süreçlere (sekme dışı sınıflara) dokunulmaz: kullanırken takılma olur (kullanıcı boştaysa istisna).
+            const targets = scoped.filter(t => actionOn(t.cls, stage) && !(t.cls === 'gpu' && keepGpu) && (idle || userIdle || isTabClass(t.cls)));
+            if (!targets.length) { log(`  aşama ${stage}: hedef yok`); continue; }
+            const by = {};
+            let n = 0;
+            const mark = t => { n++; res.pids.add(t.pid); by[t.cls] = (by[t.cls] || 0) + 1; };
+
+            if (stage === 'gc' || stage === 'cc') {
+                const jobs = [];
+                for (const t of targets) {
+                    if (capability(t.cls, stage) === 'direct') {
+                        try { stage === 'gc' ? CU.forceGC() : CU.forceCC(); mark(t); } catch (e) { logErr(stage + ' hatası', e); }
+                    } else if (t.tab) { jobs.push(sendWaitVia(t.tab, stage === 'gc' ? 'Gc' : 'Cc')); mark(t); }
+                }
+                await Promise.all(jobs);
+            } else if (stage === 'minimize') {
+                const jobs = [];
+                const wantBroadcast = [];
+                for (const t of targets) {
+                    if (capability(t.cls, stage) === 'message') { if (t.tab) { jobs.push(sendWaitVia(t.tab, 'Minimize')); mark(t); } }
+                    else wantBroadcast.push(t);
+                }
+                await Promise.all(jobs);
+                if (wantBroadcast.length) {
+                    // Yayın herkese gider: minimize'ı kapalı bir sınıf çalışıyorsa gönderme (onu etkilememek için)
+                    const blockers = [...new Set(list.filter(t => !actionOn(t.cls, 'minimize') && !(t.cls === 'gpu' && keepGpu)).map(t => t.cls))];
+                    if (blockers.length) { res.notes.push('yayın atlandı'); log(`  yayın atlandı (minimize kapalı sınıf çalışıyor: ${blockers.join(', ')})`); }
+                    else {
+                        Services.obs.notifyObservers(null, 'memory-pressure', 'heap-minimize');
+                        wantBroadcast.forEach(mark);
+                        await new Promise(r => window.setTimeout(r, CONFIG.FLOW_BROADCAST_WAIT_MS));
+                    }
+                }
+            } else if (stage === 'trim') {
+                for (const t of targets) if (trimPid(t.pid, t.cls === 'main')) { mark(t); g.trimCount++; }
+            }
+            res.counts[stage] = n;
+            log(`  aşama ${stage}: ${n} süreç ${JSON.stringify(by)}`);
+        }
+        log(`AKIŞ bitti (${o.reason})`);
+        return res;
+    }
+
+    // Akışlar tüm pencerelerde TEK kuyrukta sırayla çalışır (lider pencerenin kuyruğu).
+    let flowChain = Promise.resolve();
+    function queueFlow(o) {
+        const p = flowChain.then(() => runFlow(o)).catch(e => { logErr('akış hatası', e); return { counts: {}, pids: new Set(), protectedPids: new Set(), notes: ['hata'] }; });
+        flowChain = p;
+        return p;
+    }
+    function flow(o) {
+        const lead = browserWindows()[0];
+        const t = lead && lead.TabLifecycle;
+        return (t && t.queueFlow ? t.queueFlow : queueFlow)(o);
     }
 
     // ===========================================
@@ -518,18 +758,16 @@
         } catch (e) { return null; }
     }
 
-    /** GC + CC + heap-minimize, yalnızca bu sekmenin içerik sürecinde. Süreç aktif bir sekmeyle paylaşılıyorsa atlanır. */
+    /** GC + CC + Minimize (FLOW_ORDER sırasıyla, PROCESS_ACTIONS'a göre) yalnızca bu sekmenin sürecinde. */
     function reclaimTab(tab, st, now, why) {
         const pid = pidOf(tab);
-        if (pid) {
-            const p = snap().procs.get(pid);
-            if (p && p.active) { log(`bellek temizliği atlandı (süreç paylaşılıyor, ${why}):`, label(tab)); return false; }
-        }
-        if (!send(tab, 'Reclaim')) return false;
-        st.reclaimedAt = now;
-        log(`GC/CC/minimize (${why}):`, label(tab), pid);
-        // Temizlik bittikten sonra bellek ölçülür; derin uykudaki ikinci temizlik bununla kıyaslar.
-        if (pid) window.setTimeout(async () => { const m = await processMemory(pid); if (m != null) st.baseMem = m; }, 3000);
+        if (!pid) return false;
+        flow({ reason: `${why}: ${label(tab)}`, stages: ['gc', 'cc', 'minimize'], pids: new Set([pid]) }).then(r => {
+            if (!r.pids.has(pid)) return;   // süreç korumalı sınıftaydı (aktif/medya/yüklenen) ya da işler kapalı
+            st.reclaimedAt = Date.now();
+            // Temizlik bittikten sonra bellek ölçülür; derin uykudaki ikinci temizlik bununla kıyaslar.
+            window.setTimeout(async () => { const m = await processMemory(pid); if (m != null) st.baseMem = m; }, 3000);
+        });
         return true;
     }
 
@@ -575,26 +813,20 @@
         const br = tab.linkedBrowser;
         let contexts;
         try { contexts = br.browsingContext.getAllBrowsingContextsInSubtree(); } catch (e) { contexts = [br.browsingContext]; }
-        const s = snap();
         const pids = new Set();
-        let shared = false;
         for (const c of contexts) {
             let pid;
             try { pid = c.currentWindowGlobal && c.currentWindowGlobal.domProcess && c.currentWindowGlobal.domProcess.osPid; } catch (e) {}
-            if (!pid || pid === Services.appinfo.processID) continue;
-            const p = s.procs.get(pid);
-            if (p && p.active) { shared = true; continue; }
-            pids.add(pid);
+            if (pid && pid !== Services.appinfo.processID) pids.add(pid);
         }
-        if (shared && !pids.size) {
-            st.trimRetryAt = now + 30000;
-            log('kırpma ertelendi (süreç aktif sekmeyle paylaşılıyor):', label(tab));
-            return;
-        }
-        let n = 0;
-        for (const pid of pids) if (trimPid(pid)) n++;
-        st.trimmed = true;
-        log(`SEKME KIRPMA (${CONFIG.TAB_TRIM_AFTER_SECONDS}sn): ${n} süreç:`, label(tab));
+        st.trimmed = true;   // akış bitene kadar yeniden başlatma
+        flow({ reason: `sekme kırpma (${CONFIG.TAB_TRIM_AFTER_SECONDS}sn): ${label(tab)}`, stages: ['trim'], pids }).then(r => {
+            if (!r.pids.size && r.protectedPids.size) {
+                st.trimmed = false;
+                st.trimRetryAt = Date.now() + 30000;
+                log('kırpma ertelendi (süreç aktif/yüklenen sekmeyle paylaşılıyor):', label(tab));
+            }
+        });
     }
 
     function discardTab(tab, st, now) {
@@ -637,7 +869,7 @@
         const every = CONFIG.TRIM_MEDIA_TAB_EVERY_SECONDS * 1000;
         if (last >= idleSince && !(every > 0 && now - last >= every)) return;   // bu arka plan oturumunda yapıldı
         mediaTrimAt.set(pid, now);
-        if (trimPid(pid)) log('medya sekmesinin süreci kırpıldı:', label(tab), pid);
+        flow({ reason: 'medya sekmesi: ' + label(tab), stages: ['trim'], pids: new Set([pid]), needIdle: true });
     }
 
     function processTab(tab, now) {
@@ -683,7 +915,7 @@
     // ===========================================
     // GLOBAL ADIMLAR (yalnızca lider pencere): ana süreç + GPU, genel küçültme
     // ===========================================
-    const g = { armedAt: 0, lastMainGpu: 0, minSince: 0, minLast: 0, minReclaimed: false, trimCount: 0, lastHeartbeat: 0 };
+    const g = { armedAt: 0, idleTrimmedAt: 0, lastActive: 0, lastMainGpu: 0, minSince: 0, minLast: 0, minReclaimed: false, trimCount: 0, lastHeartbeat: 0 };
 
     /** Bir sekme derin uykuya girdi: sayaç çalışmıyorsa başlat (çalışıyorsa yeniden başlatma). */
     function noteDeepSleep(now) {
@@ -695,45 +927,12 @@
         if (!g.armedAt) { g.armedAt = now; log(`ana süreç+GPU sayacı başladı (${CONFIG.MAIN_GPU_TRIM_AFTER_DEEP_SECONDS}sn)`); }
     }
 
-    async function trimMainAndGpu(s, now, why) {
-        const info = await ChromeUtils.requestProcInfo();
-        const keepGpu = s.mediaKinds.has('pip') || s.mediaKinds.has('sharing');
-        const pids = [info.pid, ...info.children.filter(c => c.type === 'gpu' && !keepGpu).map(c => c.pid)];
-        let n = 0;
-        for (const pid of pids) if (trimPid(pid, true)) n++;
-        g.lastMainGpu = now; g.trimCount += n;
-        log(`ANA SÜREÇ + GPU kırpıldı (${why}): ${n} süreç${keepGpu ? ' (GPU atlandı: görüntü işleniyor)' : ''}${s.anyMedia ? ' (medya sekmesi atlandı: ' + s.mediaWhy + ')' : ''}`);
-    }
-
-    /** Genel bellek temizliği (kırpma yok). Medya çalıyorsa yalnızca ana süreçte. */
-    async function globalReclaim(s, why) {
-        const CU = (typeof Cu !== 'undefined') ? Cu : Components.utils;
-        if (s.anyMedia) {
-            // 'memory-pressure' TÜM süreçlere (medya sekmesininki dahil) gider; medya çalarken yalnızca ana süreçte GC/CC
-            CU.forceGC(); CU.forceCC();
-            log(`genel bellek temizliği (${why}): medya çalıyor, yalnızca ana süreçte GC/CC`);
-        } else {
-            CU.forceGC(); CU.forceCC(); CU.forceGC();
-            Services.obs.notifyObservers(null, 'memory-pressure', 'heap-minimize');
-            log(`genel bellek temizliği (${why}): GC/CC/heap-minimize tüm süreçlere gönderildi`);
-            await new Promise(r => window.setTimeout(r, 4000));
+    function anyVisibleTabBusy() {
+        for (const win of browserWindows()) {
+            const tab = win.gBrowser.selectedTab;
+            if (tab && tab.hasAttribute('busy')) return true;
         }
-    }
-
-    async function minimizeTrim(s, now, repeat) {
-        // İlk kırpmadan önce temizlik zaten yapıldı (küçültme anında); tekrarlarda yeniden temizle.
-        if (repeat) await globalReclaim(s, 'boşta tekrar');
-        const info = await ChromeUtils.requestProcInfo();
-        const protectedPids = new Set([...s.procs].filter(([, p]) => p.active).map(([pid]) => pid));
-        const keepGpu = s.mediaKinds.has('pip') || s.mediaKinds.has('sharing');
-        const isContent = t => t === 'gpu' || /^(web|extension|file|privileged|inference)/.test(t || '');
-        const kids = info.children.filter(c => !protectedPids.has(c.pid))
-            .filter(c => c.type === 'gpu' ? !keepGpu : (CONFIG.TRIM_HELPER_PROCESSES || isContent(c.type)))
-            .filter(c => c.type !== 'extension' || CONFIG.TRIM_EXTENSION_PROCESS);
-        let n = 0;
-        for (const pid of [info.pid, ...kids.map(c => c.pid)]) if (trimPid(pid, true)) n++;
-        g.lastMainGpu = now; g.minLast = now; g.trimCount += n;
-        log(`GENEL KÜÇÜLTME: ${n} süreç kırpıldı${s.anyMedia ? ' (medya sekmesi atlandı: ' + s.mediaWhy + ')' : ''}`);
+        return false;
     }
 
     let globalBusy = false;
@@ -744,13 +943,16 @@
             const q = quickState();
             const mediaOk = !q.anyMedia || CONFIG.TRIM_OTHERS_WHILE_MEDIA_PLAYS;
 
-            // 5) Derin uykudan sonra ana süreç + GPU
+            // 5) Derin uykudan sonra ana süreç + GPU (yalnızca bu iki sınıf, yalnızca kırpma)
             if (g.armedAt && now - g.armedAt >= CONFIG.MAIN_GPU_TRIM_AFTER_DEEP_SECONDS * 1000) {
                 g.armedAt = 0;
                 if (!q.allIdle) log('ana süreç+GPU kırpması iptal: bir sayfa görünür (kullanırken kırpılmaz)');
                 else if (!mediaOk) log('ana süreç+GPU kırpması iptal: medya çalıyor');
                 else if (now - g.lastMainGpu < CONFIG.MAIN_GPU_MIN_INTERVAL_SECONDS * 1000) log('ana süreç+GPU kırpması atlandı: yakın zamanda yapıldı');
-                else await trimMainAndGpu(snapshotAll(), now, 'derin uyku sonrası');
+                else {
+                    g.lastMainGpu = now;
+                    await flow({ reason: 'ana süreç + GPU (derin uyku sonrası)', stages: ['trim'], classes: new Set(['main', 'gpu']), needIdle: true });
+                }
             }
 
             // Genel küçültme: hiçbir sayfa görünür değil
@@ -760,16 +962,42 @@
                 // 1) hemen genel bellek temizliği (kırpma yok)
                 if (!g.minReclaimed && age >= CONFIG.MINIMIZE_RECLAIM_AFTER_SECONDS * 1000) {
                     g.minReclaimed = true;
-                    await globalReclaim(snapshotAll(), 'küçültme');
+                    await flow({ reason: 'genel temizlik (küçültme)', stages: ['gc', 'cc', 'minimize'], needIdle: true });
                 }
                 // 2-3) uyku ve derin uyku sekme çizelgesinde kendiliğinden olur; 4) en sonda kırpma
                 const trimAfter = (CONFIG.DEEP_SLEEP_AFTER_SECONDS + CONFIG.MINIMIZE_TRIM_AFTER_DEEP_SECONDS) * 1000;
                 const due = g.minLast === 0
                     ? age >= trimAfter
                     : (CONFIG.MINIMIZE_RETRIM_MINUTES > 0 && now - g.minLast >= CONFIG.MINIMIZE_RETRIM_MINUTES * 60000);
-                if (due) await minimizeTrim(snapshotAll(), now, g.minLast !== 0);
+                if (due) {
+                    // İlk kırpmadan önce temizlik zaten yapıldı; tekrarlarda dört iş de FLOW_ORDER sırasıyla çalışır.
+                    const repeat = g.minLast !== 0;
+                    g.lastMainGpu = g.minLast = now;
+                    await flow({ reason: repeat ? 'genel temizlik + kırpma (boşta tekrar)' : 'genel kırpma (küçültme)',
+                                 stages: repeat ? ['gc', 'cc', 'minimize', 'trim'] : ['trim'], needIdle: true });
+                }
             } else if (g.minSince) {
                 g.minSince = 0; g.minLast = 0; g.minReclaimed = false;
+            }
+
+            // Aktif sekmenin süreci için isteğe bağlı periyodik akış (varsayılan kapalı)
+            if (CONFIG.ACTIVE_FLOW_EVERY_SECONDS > 0 && !q.allIdle && now - g.lastActive >= CONFIG.ACTIVE_FLOW_EVERY_SECONDS * 1000) {
+                g.lastActive = now;
+                await flow({ reason: 'aktif sekme süreci', stages: CONFIG.FLOW_ORDER, classes: new Set(['tab_active']) });
+            }
+
+            // Kullanıcı boşta (pencere görünür, hareketsiz): ana süreç + GPU kırpılır
+            if (CONFIG.ACTIVE_IDLE_SECONDS > 0 && !q.allIdle) {
+                const need = CONFIG.ACTIVE_IDLE_SECONDS * 1000;
+                if (getIdleMs() < need) g.idleTrimmedAt = 0;   // kullanıcı etkin: yeni boşta oturumu için sıfırla
+                else if (!q.anyMedia && !anyVisibleTabBusy()) {
+                    const repeat = CONFIG.ACTIVE_IDLE_REPEAT_MINUTES * 60000;
+                    const due = !g.idleTrimmedAt || (repeat > 0 && now - g.idleTrimmedAt >= repeat);
+                    if (due) {
+                        g.idleTrimmedAt = now;
+                        await flow({ reason: `kullanıcı boşta (${CONFIG.ACTIVE_IDLE_SECONDS}sn): ana süreç + GPU`, stages: ['trim'], classes: new Set(['main', 'gpu']), userIdleMs: need });
+                    }
+                }
             }
         } catch (e) { logErr('global adım hatası', e); }
         finally { globalBusy = false; }
@@ -798,11 +1026,29 @@
             try { processTab(tab, now); } catch (e) { logErr('sekme hatası', label(tab), e); }
         }
         if (isLeader()) { await globalStep(now); await heartbeat(now); }
+        setTickRate(isSettled());
         return { ok: true };
+    }
+
+    /** Görünür sayfa yok ve her sekme derin uykuda (ya da medya/boşaltılmış): yeni sekme işi çıkmaz, yavaş kontrol yeter. */
+    function isSettled() {
+        if (!(CONFIG.TICK_SETTLED_SECONDS > 0) || !quickState().allIdle) return false;
+        for (const win of browserWindows()) {
+            for (const tab of win.gBrowser.tabs) {
+                const br = tab.linkedBrowser;
+                if (!br || !br.browsingContext) continue;   // boşaltılmış
+                if (br.docShellIsActive || tab.hasAttribute('busy')) return false;
+                if (CONFIG.SKIP_ACTIVE_MEDIA_TABS && mediaKind(tab)) continue;
+                const st = win.TabLifecycle && win.TabLifecycle.state.get(tab);
+                if (!st || !st.deep) return false;
+            }
+        }
+        return true;
     }
 
     // Sekmeye dönüldüğünde beklemeden çöz
     function onTabSelect(e) {
+        setTickRate(false);
         resetTab(e.target, 'sekmeye dönüldü');
         // Ayrılan sekmenin süresi hemen başlasın
         const prev = e.detail && e.detail.previousTab;
@@ -811,11 +1057,19 @@
     // Pencere küçültülüp geri açılınca / öne gelince beklemeden değerlendir (sekmelerin "görünür" durumu
     // pencere olayından kısa süre sonra güncellenir; bu yüzden iki kez bakılır).
     function onWindowWake() {
+        setTickRate(false);
         for (const ms of [100, 700]) window.setTimeout(() => { tick().catch(e => logErr('tick hatası', e)); }, ms);
     }
     const WAKE_EVENTS = ['sizemodechange', 'activate', 'focus'];
 
-    let timer = null;
+    let timer = null, slow = false;
+    function setTickRate(settled) {
+        if (!timer || window.closed || settled === slow) return;
+        slow = settled;
+        window.clearInterval(timer);
+        timer = window.setInterval(() => { tick().catch(e => logErr('tick hatası', e)); }, (settled ? CONFIG.TICK_SETTLED_SECONDS : CONFIG.TICK_SECONDS) * 1000);
+        log(settled ? `her şey yerleşti: kontrol ${CONFIG.TICK_SETTLED_SECONDS}sn'de bir` : `kontrol ${CONFIG.TICK_SECONDS}sn'de bire döndü`);
+    }
     function start() {
         if (timer) return;
         WAKE_EVENTS.forEach(ev => window.addEventListener(ev, onWindowWake));
@@ -824,7 +1078,7 @@
         fileLog('I', [`yüklendi: uyku=${CONFIG.SLEEP_AFTER_SECONDS}s derin=${CONFIG.DEEP_SLEEP_AFTER_SECONDS}s anaGPU=+${CONFIG.MAIN_GPU_TRIM_AFTER_DEEP_SECONDS}s sekmeKırpma=${CONFIG.TAB_TRIM_AFTER_SECONDS}s boşaltma=${CONFIG.DISCARD_AFTER_SECONDS}s günlük=${CONFIG.ENABLE_LOGGING}`]);
     }
     function stop() {
-        if (timer) { window.clearInterval(timer); timer = null; }
+        if (timer) { window.clearInterval(timer); timer = null; slow = false; }
         try { gBrowser.tabContainer.removeEventListener('TabSelect', onTabSelect); } catch (e) {}
         try { WAKE_EVENTS.forEach(ev => window.removeEventListener(ev, onWindowWake)); } catch (e) {}
         // Pencere kapanırken uyuyan sekmeleri çöz
@@ -835,6 +1089,6 @@
     }
 
     window.addEventListener('unload', stop, { once: true });
-    window.TabLifecycle = { CONFIG, tick, state, g, armMainGpu, snapshotAll, quickState, trimPid, start, stop };
+    window.TabLifecycle = { CONFIG, tick, state, g, armMainGpu, snapshotAll, quickState, trimPid, queueFlow, sendWait, classify, start, stop };
     start();
 })();

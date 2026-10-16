@@ -11,7 +11,7 @@
 }
 
 /* Çubuk: sayfa alanının altında, altta ve üstte --bm-gap boşlukla. */
-#main-window:not([inFullscreen]):not([customizing]) #PersonalToolbar:not([collapsed="true"]) {
+#main-window:not([inFullscreen]):not([customizing]) #PersonalToolbar:not([collapsed]) {
   position: fixed !important;
   inset: auto var(--bm-right, 0px) var(--bm-gap) var(--bm-left, 0px) !important;
   height: var(--bm-h) !important;
@@ -26,12 +26,12 @@
    olarak sayfa/kenar çubuğu katmanlarının (#browser) ALTINDA olduğu için, çubuk görünür olsa da tıklamalar
    #browser'a gider (ölçüldü: elementFromPoint -> hbox#browser). Araç kutusunu üste al, ama genişlemiş dikey
    çubuğun (--browser-area-z-index-sidebar-expand-on-hover = 4) ALTINDA bırak: dikey çubuk açılınca çubuğu örter. */
-#main-window:not([inFullscreen]):not([customizing]):has(#PersonalToolbar:not([collapsed="true"])) #navigator-toolbox {
+#main-window:not([inFullscreen]):not([customizing]):has(#PersonalToolbar:not([collapsed])) #navigator-toolbox {
   z-index: 3 !important;
 }
 
 /* Yalnızca sayfa alanı kısalır (dikey çubuk değil). Çubuk gizliyse ("yalnızca yeni sekmede") boşluk yok. */
-#main-window:not([inFullscreen]):not([customizing]):has(#PersonalToolbar:not([collapsed="true"])) #tabbrowser-tabbox {
+#main-window:not([inFullscreen]):not([customizing]):has(#PersonalToolbar:not([collapsed])) #tabbrowser-tabbox {
   margin-bottom: var(--bm-total) !important;
 }
 
@@ -109,4 +109,31 @@
   pointer-events: none;
   font: inherit;
   color: var(--toolbar-field-color, currentColor);
+}
+
+/* Üst çubuk (geri/ileri, adres çubuğu, uzantı düğmeleri) OTOMATİK GİZLENİR: yalnızca #nav-bar yukarı çekilip --ah-trigger kadar bir şerit
+   bırakılır; fare o şeride gelince, adres çubuğuna odaklanınca (Ctrl+L) ya da bir menü/panel açıkken aşağı iner. Açılınca sayfayı
+   aşağı iter. Yer imi çubuğu #navigator-toolbox içinde alta sabitli olduğu için toolbox'a DOKUNULMAZ, yalnızca #nav-bar hareket eder.
+   Kapatmak için bu bloğun tamamını silin. Pencere düğmeleri (küçült/büyüt/kapat) ve sürükleme alanı da nav-bar içinde olduğundan
+   gizliyken üst şerit dışında erişilemez. Özelleştirme modu ve tam ekranda uygulanmaz. */
+:root {
+  --ah-trigger: 3px;      /* gizliyken görünen ve fareyle çubuğu çağıran şerit */
+  --ah-speed: .14s;
+  --ah-close-delay: .6s;  /* fare çubuktan ayrıldıktan sonra gizlenmeden önce beklenen süre (açılış gecikmesiz) */
+}
+/* Çubuk akışta kalır (sayfayı itmez/iter): gizliyken üst kenar boşluğu negatif olduğundan yalnızca --ah-trigger kadar şerit görünür,
+   araç kutusunun (overflow:clip) kırptığı kısım gizlidir; hover'da boşluk 0 olur ve sayfa çubuk yüksekliği kadar aşağı iner.
+   Araç kutusu z-index 3: yer imi kuralı yalnızca yer imleri görünürken uygulandığından burada her durumda gerekir, yoksa şerit
+   #browser'ın altında kalıp fareyi hiç almaz. Genişlemiş dikey çubuğun (4) altında kalır. */
+#main-window:not([customizing]):not([inFullscreen]) #navigator-toolbox {
+  position: relative !important;
+  z-index: 3 !important;
+}
+#main-window:not([customizing]):not([inFullscreen]) #nav-bar {
+  margin-top: calc(-1 * (var(--ah-h, 36px) - var(--ah-trigger)));
+  transition: margin-top var(--ah-speed) ease var(--ah-close-delay) !important;
+}
+#main-window:not([customizing]):not([inFullscreen]) #nav-bar:is(:hover, :focus-within, :has(#urlbar[open], [open="true"])) {
+  margin-top: 0;
+  transition-delay: 0s !important;
 }
