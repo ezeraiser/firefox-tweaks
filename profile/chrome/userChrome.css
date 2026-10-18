@@ -59,6 +59,11 @@
   --tab-collapsed-width: calc(var(--vt-box) + 2 * var(--vt-inline)) !important;
 }
 
+/* Dikey çubuğun (sekmeler + kenar çubuğu düğmeleri) ölçeği: 1 = varsayılan. Yukarıdaki --vt-* ölçüleri bu oranla birlikte küçülür.
+   Genişlik değiştiği için yer imi çubuğunun başlangıcını bookmarks_bottom.uc.js kendiliğinden yeniden ölçer. */
+:root { --vt-scale: 0.9; }
+sidebar-main { zoom: var(--vt-scale); }
+
 /* Adres çubuğu: yanlardan daralt, dikeyde biraz büyüt (araç çubuğunu büyütmeden, alt/üst boşluğu azaltarak);
    Helium gibi ortalı, kısa bir kutu. Her şey ORANTILI: piksel yok.
    --urlbar-w: genişlik, pencere genişliğinin yüzdesi (vw). Alt sınır: --urlbar-min-w (yine pencere yüzdesi).
@@ -111,10 +116,15 @@
   color: var(--toolbar-field-color, currentColor);
 }
 
-/* Üst çubuğun ölçeği: yalnızca #nav-bar (düğmeler, adres çubuğu, yazılar) küçülür; sekmeler ve sayfa etkilenmez. 1 = varsayılan boyut.
-   Otomatik gizleme payı (negatif üst boşluk) da aynı oranda ölçeklendiği için gizleme/şerit mantığı bozulmaz. */
-:root { --nav-scale: 0.9; }
-#nav-bar { zoom: var(--nav-scale); }
+/* Üst çubuğun ölçeği: yalnızca #nav-bar içindeki düğmeler ve adres çubuğu küçülür; sekmeler ve sayfa etkilenmez. 1 = varsayılan boyut.
+   zoom çubuğun KENDİSİNE verilmez: Firefox taşma (overflow) kararını çubuğun içeriğiyle kendi genişliğini karşılaştırarak verir,
+   zoom'lu çubukta bu ikisi farklı birimde ölçüldüğünden hep "sığmıyor" sanıp uzantı düğmelerini taşma menüsüne atıyordu (ölçüldü).
+   Çubuk yüksekliği ölçekle değiştiği için otomatik gizleme payı (--ah-h) da ona bağlanır; yoksa şerit görünmez kalır. */
+:root {
+  --nav-scale: 0.9;
+  --ah-h: calc(36px * var(--nav-scale)); /* çubuk yüksekliği (ölçüldü: 36px, ölçekle orantılı); otomatik gizleme payı buna bağlı */
+}
+#nav-bar toolbarbutton, #nav-bar #urlbar { zoom: var(--nav-scale); }
 
 /* Üst çubuk (geri/ileri, adres çubuğu, uzantı düğmeleri) OTOMATİK GİZLENİR: yalnızca #nav-bar yukarı çekilip --ah-trigger kadar bir şerit
    bırakılır; fare o şeride gelince, adres çubuğuna odaklanınca (Ctrl+L) ya da bir menü/panel açıkken aşağı iner. Açılınca sayfayı
