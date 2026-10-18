@@ -231,6 +231,18 @@ kimlikleri, geliştirici araçları geçmişi ve oturumla ilgili başka veriler 
 değişmedi (bkz. bölüm 7). Son ikisinin neden sıfırlandığına dair bir not yok; yalnızca dosyada görünmedikleri için buraya
 yazıldı.
 
+**Ortam değişkeni (Windows kullanıcı düzeyi, `about:config` değil)**
+
+Crash reporter'ı ve `crashhelper` sürecini başlatmamak için (canlı profilde denendi: değişkenden sonra `crashhelper` hiç başlamıyor), Firefox'u tamamen kapatıp PowerShell'de bir kez çalıştırın:
+
+```powershell
+[Environment]::SetEnvironmentVariable("MOZ_CRASHREPORTER_DISABLE", "1", "User")
+```
+
+Bir pref değildir, `user.js`/uc.js ile verilemez: Firefox açılırken okunur, betikler ise sonra çalışır. Tüm Mozilla uygulamalarını
+(örn. Thunderbird) etkiler; çökmelerde dump/rapor oluşmaz. Geri almak için:
+`[Environment]::SetEnvironmentVariable("MOZ_CRASHREPORTER_DISABLE", $null, "User")`.
+
 Tam bir geri yükleme için profili yedeklemek gerekir; bu liste yalnızca neyin değiştiğini hatırlatır.
 
 ## 10. Sağ tık çevirisi: DeepL ya da Google (`translate.uc.js`)

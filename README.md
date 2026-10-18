@@ -43,8 +43,10 @@ kopyalamak ve `user.js`'i profile almak yeterli.
    dosyasını `<Firefox>\defaults\pref\` altına kopyalayın. (Firefox güncellenince bu dosyalar silinirse yeniden kopyalayın.)
 2. `profile\user.js` dosyasını profil klasörüne, `profile\chrome\*.uc.js` dosyalarını profildeki `chrome\` klasörüne
    (yoksa oluşturun) kopyalayın.
-3. Firefox'u kapatıp açın.
-4. Doğrulama: `chrome\memlog.txt` oluşmalı ve her betik için bir `yüklendi:` satırı içermeli. Olmazsa
+3. (İsteğe bağlı) Crash reporter'ı kapatmak için bir kez:
+   `[Environment]::SetEnvironmentVariable("MOZ_CRASHREPORTER_DISABLE", "1", "User")` (PowerShell). Ayrıntı: `docs/UI-Tasarim.md` bölüm 9.
+4. Firefox'u kapatıp açın.
+5. Doğrulama: `chrome\memlog.txt` oluşmalı ve her betik için bir `yüklendi:` satırı içermeli. Olmazsa
    `Ctrl+Shift+J` (Tarayıcı Konsolu) açıp `[config.js] ✓ Loaded: ...` / `✗ Failed: ...` satırlarına bakın.
 
 ## Betikler ve kilit ayarlar
