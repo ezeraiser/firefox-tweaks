@@ -13,6 +13,7 @@ ekran görüntüsüyle bakıldı. Hiçbiri gerçek günlük profilde uzun süre 
 |---|---|
 | `profile/chrome/userChrome.css` | Yer imi çubuğunu alta taşır, dikey sekme şeridini sıkılaştırır, adres çubuğunu daraltıp ortalar, alan adı yer tutucusunu çizer |
 | `profile/chrome/bookmarks_bottom.uc.js` | Sayfa alanının sol/sağ kenarını ölçüp CSS değişkenlerine yazar; dikey çubuğun altındaki düğmeleri yer imi çubuğuyla hizalar |
+| `profile/chrome/bookmark_host_tag.uc.js` | Yer imi düğmelerine alan adını `data-bm-host` olarak yazar; userChrome.css koyu temada tek renkli simgeleri (GitHub, X) buna göre ters çevirir |
 | `profile/chrome/urlbar_domain.uc.js` | Adres çubuğu odakta değilken yalnızca ana alan adını gösterir (tıklayınca tam URL) |
 | `profile/chrome/ExtensionToggleManager.uc.js` | Yeniden tasarlanan uzantı yöneticisi paneli |
 | `profile/chrome/tab_lifecycle.uc.js` | Günlük kapatma düzeltmesi ve ses çalan sekme için kırpma seçenekleri |
@@ -303,8 +304,27 @@ tarayıcıda (-10000px) normal adresiyle (metin hazır dolu) açılır, çevirin
 - `webMode: hidden` yalnızca gizli motoru kullanır (hata olursa panele düşmez); `panel` siteyi görünür panelde gösterir; `tab` yeni sekme.
   DeepL için gizli motor yoktur (siteyi görünür panelde gösterir).
 
+### Dil seçicileri, dil algılama ve alternatifler
+
+- **Dil seçicileri:** Sonuç panelinin başlığında kaynak (Otomatik + 15 dil) ve hedef dil açılır listeleri vardır; birini değiştirince aynı
+  metin yeniden çevrilir. Seçim yalnızca o çeviri içindir (`about:config`'e yazılmaz); sağ tık menüsünden yeni çeviri başlayınca sıfırlanır.
+  DeepL hedefte EN/PT/ZH için EN-US/PT-BR/ZH-HANS kullanır; kaynak bölgesiz kodla gider.
+- **Dil algılama:** Kaynak "Otomatik" iken Firefox'un yerleşik, yerel algılayıcısı (`LanguageDetector`, CLD2; ağ isteği yok) metnin dilini
+  bulur ve "Otomatik · EN" biçiminde gösterir. Algılanan dil hedefle aynıysa (Türkçe -> Türkçe) hedef `swapTarget` olur (varsayılan EN).
+  Yalnızca "Seçili metni çevir" içindir. Ayarlar dosyanın başındaki `SETTINGS` bloğundadır: `showDetected`, `autoSwapSameLang`,
+  `swapTarget`, `requireConfident`.
+- **Alternatif çeviriler:** Google sonucunda bir kelimeye çift tıklayınca o kelimenin birimi (`alternativeUnit`: `'sentence'` nokta bazlı
+  cümle, `'clause'` virgül/`;`/`:` bazlı kısım) pencerede seçilir ve Google'ın alternatif çevirileri düğme olarak çıkar; birine tıklayınca
+  yalnızca o birim değişir, Kopyala güncel metni verir. Alternatifler Google'ın **resmi olmayan** web uç noktasından
+  (`translate.googleapis.com/translate_a/single`, `client=gtx`, `dt=at`) gelir ve **kelime değil cümle bazındadır**; virgül biriminde yalnızca
+  o kısım tek başına gönderilir (bağlam azalır). Yalnızca çift tıklayınca tek istek gider; hata olursa panelde bildirilir. Belgesiz bir
+  uç nokta olduğu için her an bozulabilir ya da kullanım koşulları dışında kalabilir: `SETTINGS.wordAlternatives: false` ile kapatılır.
+  Panelde görünen çeviri ayrı bir yoldan (gizli sayfa ya da API) geldiği için birimler kelime benzerliğiyle eşleştirilir; **Denenmedi:**
+  bu eşleştirmenin gerçek Firefox'ta farklı dil çiftlerindeki başarısı.
+
 **Anahtarsız (resmi API'siz) çeviri neden yok:** Resmi DeepL uzantısı DeepL'in kendi web arka ucunu kullanır; Google için de
-belgesiz, ücretsiz bir uç nokta (`client=gtx`) yaygın olarak kullanılır. Üçüncü taraf bir betiğin bu belgesiz uç noktalara
+belgesiz, ücretsiz bir uç nokta (`client=gtx`) yaygın olarak kullanılır; çeviri için KULLANILMAZ, yalnızca yukarıdaki isteğe bağlı
+alternatif önerileri için (kapatılabilir) kullanılır. Üçüncü taraf bir betiğin bu belgesiz uç noktalara
 bağlanması servislerin kullanım koşullarının dışındadır, hız sınırına ve IP engeline takılır ve her an bozulabilir. Bu yüzden
 resmi API'ler ve servislerin kendi web siteleri seçildi. DeepL API anahtarı ücretsiz çeviri hesabından ayrı bir plandır
 (DeepL API Free); Google Cloud Translation anahtarı için bir Google Cloud projesi ve faturalandırma hesabı gerekir (aylık
