@@ -15,6 +15,8 @@ Current version: Firefox 159 (the UI and translation work is done on this versio
 |---|---|---|
 | `firefox-install/config.js` | Autoconfig loader: runs the profile's `chrome\*.uc.js` scripts in every browser window. Also holds a few preferences (telemetry etc.). | Firefox install folder (next to `firefox.exe`) |
 | `firefox-install/defaults/pref/config-prefs.js` | Enables `config.js` (`general.config.filename`, `sandbox_enabled=false`). | `<Firefox>\defaults\pref\` |
+| `firefox-install/distribution/policies.json` | Enterprise policies: telemetry, studies, Pocket and feedback commands off; tracking protection (cryptomining, fingerprinting) on; built-in PDF viewer and screenshots off; no default-browser check, first-run page, captive-portal check or Windows SSO; extension/feature recommendations and "More from Mozilla" hidden; credit-card autofill off. | `<Firefox>\distribution\` |
+| `install-scripts/firefox-tweaks.ps1` | **Installer / uninstaller with a window (PowerShell).** Detects Firefox's default profile (`profiles.ini`) and asks you to confirm it. Source: local (next to the script) or downloaded from GitHub (`irm https://raw.githubusercontent.com/ezeraiser/firefox-tweaks/main/install-scripts/firefox-tweaks.ps1 \| iex`). Backs up every file it would overwrite to `<profile>\firefox-tweaks-backup\` (with a manifest). Uninstall restores the backups, deletes only what it created (including empty folders it made and the logs the scripts write), removes the backup, and finally asks whether to delete the script itself. Needs Firefox closed; also runs from the command line (`-Mode Install\|Uninstall\|Get\|Set`, `-DryRun`). The UI is English by default; switch to Turkish with the language box (or `-Lang tr`). **Settings tab:** edits the installed scripts' settings without opening files, with a plain-language description (and a small drawing) for each: bookmarks bar at the bottom, top-bar auto-hide, domain-only address bar (each on/off), sizes and delays, translation behaviour, translation service and API keys (written to `prefs.js`, never to the repo), and the basic memory timings of `tab_lifecycle.uc.js` (more detail stays in that file: "Open file"). Every setting has a "default" link. The list comes from `install-scripts/settings.json`; `-Mode CheckSchema` verifies it against the repo files. | - |
 | `profile/user.js` | Profile settings: `gfx.webrender.max-shared-surface-size = 1024` (GPU memory) and `toolkit.legacyUserProfileCustomizations.stylesheets = true` (so `userChrome.css` loads). | Profile folder (next to `prefs.js`) |
 | `profile/chrome/tab_lifecycle.uc.js` | **One file, one timeline:** sleep (2 s) -> deep sleep (60 s) -> main process + GPU trim (+60 s, only when no page is visible) -> tab trim (120 s) -> discard (900 s) + a global trim when the window is minimized. Replaces the three old scripts below. | `<profile>\chrome\` |
 | `profile/disabled/tab_trimmer.uc.js`, `tab_freezer.uc.js`, `tab_discarder.uc.js` | **Old, separate scripts (do not use).** Run together with `tab_lifecycle.uc.js` they freeze and trim the same tab twice. | - |
@@ -44,12 +46,13 @@ and put `user.js` in the profile.
 
 1. Copy `firefox-install\config.js` into Firefox's install folder and `firefox-install\defaults\pref\config-prefs.js`
    into `<Firefox>\defaults\pref\`. (If Firefox updates remove these files, copy them again.)
-2. Copy `profile\user.js` into the profile folder and `profile\chrome\*.uc.js` into the profile's `chrome\` folder
+2. Copy `firefox-install\distribution\policies.json` into `<Firefox>\distribution\` (create the folder if missing; review it first, it turns off the built-in PDF viewer among other things).
+3. Copy `profile\user.js` into the profile folder and `profile\chrome\*.uc.js` into the profile's `chrome\` folder
    (create it if missing).
-3. (Optional) To disable the crash reporter, once:
+4. (Optional) To disable the crash reporter, once:
    `[Environment]::SetEnvironmentVariable("MOZ_CRASHREPORTER_DISABLE", "1", "User")` (PowerShell). Details: `docs/UI-Tasarim.md` section 9.
-4. Close and reopen Firefox.
-5. Verification: `chrome\memlog.txt` should appear and contain one `yüklendi:` ("loaded") line per script. If not, open
+5. Close and reopen Firefox.
+6. Verification: `chrome\memlog.txt` should appear and contain one `yüklendi:` ("loaded") line per script. If not, open
    `Ctrl+Shift+J` (Browser Console) and look for `[config.js] ✓ Loaded: ...` / `✗ Failed: ...` lines.
 
 ## Scripts and key settings

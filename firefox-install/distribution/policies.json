@@ -1,0 +1,33 @@
+{
+    "policies": {
+        "AutofillCreditCardEnabled": false,
+        "DisableTelemetry": true,
+        "DisableFirefoxStudies": true,
+        "DisablePocket": true,
+        "DisableFeedbackCommands": true,
+        "DontCheckDefaultBrowser": true,
+        "IPProtectionAvailable": false,
+        "OverrideFirstRunPage": "",
+        "WindowsSSO": false,
+		"CaptivePortal": false,
+        "EnableTrackingProtection": {
+            "Value": true,
+            "Cryptomining": true,
+            "Fingerprinting": true
+        },
+        "DisableFirefoxAccounts": false,
+        "DisableFirefoxScreenshots": true,
+        "DisableBuiltinPDFViewer": true,
+        "DisableFirefoxStudies": true,
+        "DisableSetDesktopBackground": true,
+        "PDFjs": {
+            "Enabled": false
+        },
+        "UserMessaging": {
+            "ExtensionRecommendations": false,
+            "FeatureRecommendations": false,
+            "MoreFromMozilla": false,
+            "SkipDoorhanger": true
+        }
+    }
+}

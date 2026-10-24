@@ -15,6 +15,8 @@ Güncel sürüm: Firefox 159 (arayüz ve çeviri çalışması bu sürümle yür
 |---|---|---|
 | `firefox-install/config.js` | Autoconfig yükleyicisi: profildeki `chrome\*.uc.js` betiklerini her tarayıcı penceresinde çalıştırır. İçinde ayrıca telemetri vb. tercihler var. | Firefox kurulum klasörü (`firefox.exe`'nin yanı) |
 | `firefox-install/defaults/pref/config-prefs.js` | `config.js`'i etkinleştirir (`general.config.filename`, `sandbox_enabled=false`). | `<Firefox>\defaults\pref\` |
+| `firefox-install/distribution/policies.json` | Kurumsal ilkeler (policies): telemetri, çalışmalar (studies), Pocket ve geri bildirim komutları kapalı; izleme koruması (kripto madenciliği, parmak izi) açık; yerleşik PDF görüntüleyici ve ekran görüntüsü kapalı; varsayılan tarayıcı denetimi, ilk çalıştırma sayfası, captive-portal denetimi ve Windows SSO yok; uzantı/özellik önerileri ve "Mozilla'dan daha fazlası" gizli; kredi kartı otomatik doldurma kapalı. | `<Firefox>\distribution\` |
+| `install-scripts/firefox-tweaks.ps1` | **Pencereli kurulum / kaldırma aracı (PowerShell).** Firefox'un varsayılan profilini (`profiles.ini`) bulur ve onayınızı ister. Kaynak: yerel (betiğin yanı) ya da GitHub'dan indirme (`irm https://raw.githubusercontent.com/ezeraiser/firefox-tweaks/main/install-scripts/firefox-tweaks.ps1 \| iex`). Üzerine yazacağı her dosyayı `<profil>\firefox-tweaks-backup\` altına yedekler (manifest ile). Kaldırma yedekleri geri yükler, yalnızca kendi oluşturduklarını siler (oluşturduğu boş klasörler ve betiklerin yazdığı günlükler dahil), yedeği kaldırır ve en sonda betiğin kendisini silmek isteyip istemediğinizi sorar. Firefox kapalı olmalı; komut satırından da çalışır (`-Mode Install\|Uninstall\|Get\|Set`, `-DryRun`). Arayüz varsayılan olarak İngilizcedir; dil kutusundan (ya da `-Lang tr` ile) Türkçeye geçilir. **Ayarlar sekmesi:** kurulu betiklerin ayarlarını dosya açmadan, her biri için sade bir açıklama (ve küçük bir çizim) ile düzenler: yer imi çubuğu altta, üst çubuğu otomatik gizleme, adres çubuğunda yalnızca alan adı (hepsi aç/kapa), boyutlar ve gecikmeler, çeviri davranışı, çeviri servisi ve API anahtarları (`prefs.js`'e yazılır, depoya asla), ve `tab_lifecycle.uc.js`'in temel bellek süreleri (daha fazla ayrıntı dosyada kalır: "Dosyayı aç"). Her ayarın "varsayılan" bağlantısı vardır. Liste `install-scripts/settings.json` dosyasından gelir; `-Mode CheckSchema` onu repo dosyalarıyla doğrular. | - |
 | `profile/user.js` | Profil ayarları: `gfx.webrender.max-shared-surface-size = 1024` (GPU belleği) ve `toolkit.legacyUserProfileCustomizations.stylesheets = true` (`userChrome.css`'in yüklenmesi için). | Profil klasörü (`prefs.js`'in yanı) |
 | `profile/chrome/tab_lifecycle.uc.js` | **Tek dosya, tek zaman çizelgesi:** uyku (2 sn) -> derin uyku (60 sn) -> ana süreç+GPU kırpma (+60 sn, yalnızca hiçbir sayfa görünmüyorsa) -> sekme kırpma (120 sn) -> boşaltma (900 sn) + pencere küçültünce genel küçültme. Aşağıdaki üç eski betiğin yerine geçer. | `<profil>\chrome\` |
 | `profile/disabled/tab_trimmer.uc.js`, `tab_freezer.uc.js`, `tab_discarder.uc.js` | **Eski, ayrı betikler (kullanmayın).** `tab_lifecycle.uc.js` ile aynı anda çalışırsa aynı sekmeyi iki kez dondurup kırparlar. | - |
@@ -44,12 +46,13 @@ kopyalamak ve `user.js`'i profile almak yeterli.
 
 1. `firefox-install\config.js` dosyasını Firefox'un kurulum klasörüne, `firefox-install\defaults\pref\config-prefs.js`
    dosyasını `<Firefox>\defaults\pref\` altına kopyalayın. (Firefox güncellenince bu dosyalar silinirse yeniden kopyalayın.)
-2. `profile\user.js` dosyasını profil klasörüne, `profile\chrome\*.uc.js` dosyalarını profildeki `chrome\` klasörüne
+2. `firefox-install\distribution\policies.json` dosyasını `<Firefox>\distribution\` altına kopyalayın (yoksa klasörü oluşturun; önce gözden geçirin, yerleşik PDF görüntüleyiciyi de kapatır).
+3. `profile\user.js` dosyasını profil klasörüne, `profile\chrome\*.uc.js` dosyalarını profildeki `chrome\` klasörüne
    (yoksa oluşturun) kopyalayın.
-3. (İsteğe bağlı) Crash reporter'ı kapatmak için bir kez:
+4. (İsteğe bağlı) Crash reporter'ı kapatmak için bir kez:
    `[Environment]::SetEnvironmentVariable("MOZ_CRASHREPORTER_DISABLE", "1", "User")` (PowerShell). Ayrıntı: `docs/UI-Tasarim.md` bölüm 9.
-4. Firefox'u kapatıp açın.
-5. Doğrulama: `chrome\memlog.txt` oluşmalı ve her betik için bir `yüklendi:` satırı içermeli. Olmazsa
+5. Firefox'u kapatıp açın.
+6. Doğrulama: `chrome\memlog.txt` oluşmalı ve her betik için bir `yüklendi:` satırı içermeli. Olmazsa
    `Ctrl+Shift+J` (Tarayıcı Konsolu) açıp `[config.js] ✓ Loaded: ...` / `✗ Failed: ...` satırlarına bakın.
 
 ## Betikler ve kilit ayarlar

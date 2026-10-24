@@ -1,0 +1,897 @@
+{
+  "version": 1,
+  "groups": [
+    {
+      "id": "css",
+      "file": "chrome/userChrome.css",
+      "title": {
+        "en": "Layout and look (userChrome.css)",
+        "tr": "Yerleşim ve görünüm (userChrome.css)"
+      },
+      "settings": [
+        {
+          "id": "toggle.bookmarks-bottom",
+          "kind": "toggle",
+          "key": "bookmarks-bottom",
+          "type": "bool",
+          "default": true,
+          "en": {
+            "label": "Bookmarks bar at the bottom",
+            "desc": "Moves the bookmarks toolbar to the bottom of the window. It starts where the vertical tab strip ends and spans only the page area, with a small gap above and below. Turn it off to use Firefox's normal bookmarks bar at the top.",
+            "diagram": "+----+----------------------+\n| V  |                      |\n| T  |         page         |\n| a  |                      |\n| b  +----------------------+\n| s  | * * *  bookmarks     |\n+----+----------------------+"
+          },
+          "tr": {
+            "label": "Yer imi çubuğu altta",
+            "desc": "Yer imi çubuğunu pencerenin altına taşır. Dikey sekme şeridinin bittiği yerden başlar, yalnızca sayfa alanı genişliğinde olur; altında ve üstünde küçük bir boşluk kalır. Kapatırsanız Firefox'un normal üst yer imi çubuğu kullanılır.",
+            "diagram": "+----+----------------------+\n| D  |                      |\n| i  |         sayfa        |\n| k  |                      |\n| e  +----------------------+\n| y  | * * *  yer imleri    |\n+----+----------------------+"
+          }
+        },
+        {
+          "id": "css.bm-h",
+          "kind": "css",
+          "key": "--bm-h",
+          "type": "number",
+          "default": 28,
+          "en": {
+            "label": "Bookmarks bar height",
+            "desc": "Height of the bottom bookmarks bar, in pixels."
+          },
+          "tr": {
+            "label": "Yer imi çubuğu yüksekliği",
+            "desc": "Alttaki yer imi çubuğunun yüksekliği (piksel)."
+          },
+          "unit": "px",
+          "min": 16,
+          "max": 64,
+          "step": 1
+        },
+        {
+          "id": "css.bm-gap",
+          "kind": "css",
+          "key": "--bm-gap",
+          "type": "number",
+          "default": 4,
+          "en": {
+            "label": "Bookmarks bar gap",
+            "desc": "Empty space above and below the bottom bookmarks bar, in pixels."
+          },
+          "tr": {
+            "label": "Yer imi çubuğu boşluğu",
+            "desc": "Alttaki yer imi çubuğunun altında ve üstünde bırakılan boşluk (piksel)."
+          },
+          "unit": "px",
+          "min": 0,
+          "max": 24,
+          "step": 1
+        },
+        {
+          "id": "css.vt-box",
+          "kind": "css",
+          "key": "--vt-box",
+          "type": "number",
+          "default": 26,
+          "en": {
+            "label": "Vertical tab box size",
+            "desc": "Size of each tab's square in the collapsed vertical tab strip. The strip is this size plus twice the side padding wide."
+          },
+          "tr": {
+            "label": "Dikey sekme kutusu boyutu",
+            "desc": "Daraltılmış dikey sekme şeridinde her sekmenin kare boyutu. Şerit genişliği = bu boyut + iki yan boşluk."
+          },
+          "unit": "px",
+          "min": 18,
+          "max": 48,
+          "step": 1
+        },
+        {
+          "id": "css.vt-inline",
+          "kind": "css",
+          "key": "--vt-inline",
+          "type": "number",
+          "default": 7,
+          "en": {
+            "label": "Vertical strip side padding",
+            "desc": "Padding left and right of each tab box; makes the strip wider or narrower."
+          },
+          "tr": {
+            "label": "Dikey şerit yan boşluğu",
+            "desc": "Her sekme kutusunun solundaki ve sağındaki boşluk; şeridi genişletir ya da daraltır."
+          },
+          "unit": "px",
+          "min": 0,
+          "max": 20,
+          "step": 1
+        },
+        {
+          "id": "css.vt-block",
+          "kind": "css",
+          "key": "--vt-block",
+          "type": "number",
+          "default": 0,
+          "en": {
+            "label": "Vertical tab spacing",
+            "desc": "Extra space above and below each tab; 0 packs the tabs tightly."
+          },
+          "tr": {
+            "label": "Dikey sekme aralığı",
+            "desc": "Her sekmenin üstüne ve altına eklenen boşluk; 0 sekmeleri sıkı dizer."
+          },
+          "unit": "px",
+          "min": 0,
+          "max": 12,
+          "step": 1
+        },
+        {
+          "id": "css.vt-scale",
+          "kind": "css",
+          "key": "--vt-scale",
+          "type": "number",
+          "default": 0.9,
+          "en": {
+            "label": "Vertical bar scale",
+            "desc": "Scales the whole vertical bar (tabs and sidebar buttons). 1 = Firefox default size, smaller = more compact."
+          },
+          "tr": {
+            "label": "Dikey çubuk ölçeği",
+            "desc": "Tüm dikey çubuğu (sekmeler ve kenar çubuğu düğmeleri) ölçekler. 1 = Firefox varsayılan boyutu, küçüldükçe daha sıkışık."
+          },
+          "min": 0.6,
+          "max": 1.4,
+          "step": 0.05
+        },
+        {
+          "id": "css.nav-scale",
+          "kind": "css",
+          "key": "--nav-scale",
+          "type": "number",
+          "default": 0.9,
+          "en": {
+            "label": "Top bar scale",
+            "desc": "Scales the buttons and the address bar in the top bar (tabs and page are not affected). 1 = default size."
+          },
+          "tr": {
+            "label": "Üst çubuk ölçeği",
+            "desc": "Üst çubuktaki düğmeleri ve adres çubuğunu ölçekler (sekmeler ve sayfa etkilenmez). 1 = varsayılan boyut."
+          },
+          "min": 0.6,
+          "max": 1.4,
+          "step": 0.05
+        },
+        {
+          "id": "css.urlbar-w",
+          "kind": "css",
+          "key": "--urlbar-w",
+          "type": "number",
+          "default": 37,
+          "en": {
+            "label": "Address bar width",
+            "desc": "Width of the address bar as a percentage of the window width. It stays centered."
+          },
+          "tr": {
+            "label": "Adres çubuğu genişliği",
+            "desc": "Adres çubuğunun genişliği (pencere genişliğinin yüzdesi). Ortalı kalır."
+          },
+          "unit": "vw",
+          "min": 15,
+          "max": 80,
+          "step": 1
+        },
+        {
+          "id": "css.urlbar-min-w",
+          "kind": "css",
+          "key": "--urlbar-min-w",
+          "type": "number",
+          "default": 20,
+          "en": {
+            "label": "Address bar minimum width",
+            "desc": "The address bar never gets narrower than this percentage of the window width."
+          },
+          "tr": {
+            "label": "Adres çubuğu en küçük genişliği",
+            "desc": "Adres çubuğu pencere genişliğinin bu yüzdesinden daha dar olmaz."
+          },
+          "unit": "vw",
+          "min": 10,
+          "max": 60,
+          "step": 1
+        },
+        {
+          "id": "css.urlbar-extra-ratio",
+          "kind": "css",
+          "key": "--urlbar-extra-ratio",
+          "type": "number",
+          "default": 0.143,
+          "en": {
+            "label": "Address bar extra height",
+            "desc": "Makes the address bar taller without making the top bar taller. 0.143 is about +4 px, 0.07 about +2 px, 0 is Firefox default."
+          },
+          "tr": {
+            "label": "Adres çubuğu ek yüksekliği",
+            "desc": "Üst çubuğu büyütmeden adres çubuğunu yükseltir. 0.143 yaklaşık +4 px, 0.07 yaklaşık +2 px, 0 Firefox varsayılanı."
+          },
+          "min": 0,
+          "max": 0.4,
+          "step": 0.01
+        },
+        {
+          "id": "toggle.topbar-autohide",
+          "kind": "toggle",
+          "key": "topbar-autohide",
+          "type": "bool",
+          "default": true,
+          "en": {
+            "label": "Auto-hide the top bar",
+            "desc": "The top bar (back/forward, address bar, extensions) slides out of view; only a thin strip stays at the top edge. Move the mouse to that strip, press Ctrl+L or open a menu to bring it back; it hides again shortly after the mouse leaves. Only for maximized windows. The page moves down while the bar is open.",
+            "diagram": "hidden:                 shown (mouse at the top / Ctrl+L):\n+----------------+      +-----------------+\n|=== thin strip =|      |<  >  [ address ] |\n|                |      +-----------------+\n|      page      |      |      page       |\n+----------------+      +-----------------+"
+          },
+          "tr": {
+            "label": "Üst çubuğu otomatik gizle",
+            "desc": "Üst çubuk (geri/ileri, adres çubuğu, uzantılar) görünmez olur; üst kenarda yalnızca ince bir şerit kalır. Fareyi o şeride getirince, Ctrl+L ile ya da bir menü açılınca çubuk geri gelir; fare ayrılınca kısa süre sonra yine gizlenir. Yalnızca büyütülmüş pencerelerde çalışır. Çubuk açıkken sayfa aşağı iner.",
+            "diagram": "gizli:                  görünür (fare üstte / Ctrl+L):\n+----------------+      +-----------------+\n|=== ince şerit =|      |<  >  [ adres ]   |\n|                |      +-----------------+\n|     sayfa      |      |      sayfa      |\n+----------------+      +-----------------+"
+          }
+        },
+        {
+          "id": "css.ah-trigger",
+          "kind": "css",
+          "key": "--ah-trigger",
+          "type": "number",
+          "default": 3,
+          "en": {
+            "label": "Hover strip height",
+            "desc": "Height of the thin strip that stays visible while the top bar is hidden; the mouse on it brings the bar back."
+          },
+          "tr": {
+            "label": "Çağırma şeridi yüksekliği",
+            "desc": "Üst çubuk gizliyken görünen ince şeridin yüksekliği; fareyi oraya getirmek çubuğu geri çağırır."
+          },
+          "unit": "px",
+          "min": 1,
+          "max": 20,
+          "step": 1
+        },
+        {
+          "id": "css.ah-speed",
+          "kind": "css",
+          "key": "--ah-speed",
+          "type": "number",
+          "default": 0.14,
+          "en": {
+            "label": "Slide speed",
+            "desc": "How long the top bar takes to slide in or out, in seconds."
+          },
+          "tr": {
+            "label": "Kayma hızı",
+            "desc": "Üst çubuğun açılıp kapanma süresi (saniye)."
+          },
+          "unit": "s",
+          "min": 0,
+          "max": 1,
+          "step": 0.02
+        },
+        {
+          "id": "css.ah-close-delay",
+          "kind": "css",
+          "key": "--ah-close-delay",
+          "type": "number",
+          "default": 0.6,
+          "en": {
+            "label": "Hide delay",
+            "desc": "How long the top bar waits after the mouse leaves before it hides again, in seconds."
+          },
+          "tr": {
+            "label": "Gizlenme gecikmesi",
+            "desc": "Fare çubuktan ayrıldıktan sonra çubuğun yeniden gizlenmeden önce bekleme süresi (saniye)."
+          },
+          "unit": "s",
+          "min": 0,
+          "max": 5,
+          "step": 0.1
+        },
+        {
+          "id": "toggle.urlbar-domain-only",
+          "kind": "toggle",
+          "key": "urlbar-domain-only",
+          "type": "bool",
+          "default": true,
+          "en": {
+            "label": "Show only the domain in the address bar",
+            "desc": "While the address bar is not focused it shows only the site's main domain, centered (for example github.com instead of the full address). Click it or press Ctrl+L to see the full URL. Needs urlbar_domain.uc.js.",
+            "diagram": "unfocused:   [      github.com       ]\nfocused:     [ https://github.com/ezeraiser/... ]"
+          },
+          "tr": {
+            "label": "Adres çubuğunda yalnızca alan adı",
+            "desc": "Adres çubuğuna odaklanılmadığında yalnızca sitenin ana alan adını ortalı gösterir (tam adres yerine örneğin github.com). Tıklayınca ya da Ctrl+L ile tam adres görünür. urlbar_domain.uc.js gerekir.",
+            "diagram": "odaksız:     [      github.com       ]\nodaklı:      [ https://github.com/ezeraiser/... ]"
+          }
+        }
+      ]
+    },
+    {
+      "id": "translate",
+      "file": "chrome/translate.uc.js",
+      "title": {
+        "en": "Translation behaviour (translate.uc.js)",
+        "tr": "Çeviri davranışı (translate.uc.js)"
+      },
+      "settings": [
+        {
+          "id": "translate.showDetected",
+          "kind": "js",
+          "key": "showDetected",
+          "type": "bool",
+          "default": true,
+          "en": {
+            "label": "Show the detected language",
+            "desc": "While the source language is \"Auto\", the result panel shows the detected language code next to it, for example \"Auto · EN\"."
+          },
+          "tr": {
+            "label": "Algılanan dili göster",
+            "desc": "Kaynak dil \"Otomatik\" iken sonuç panelinde yanında algılanan dil kodu görünür, örneğin \"Otomatik · EN\"."
+          }
+        },
+        {
+          "id": "translate.autoSwapSameLang",
+          "kind": "js",
+          "key": "autoSwapSameLang",
+          "type": "bool",
+          "default": true,
+          "en": {
+            "label": "Never translate into the same language",
+            "desc": "If the detected language equals the target language (for example Turkish text with Turkish as target), the target switches to the fallback language below. You can still pick any language manually in the panel."
+          },
+          "tr": {
+            "label": "Aynı dile çevirme",
+            "desc": "Algılanan dil hedef dille aynıysa (örneğin Türkçe metin ve hedef Türkçe) hedef aşağıdaki yedek dile geçer. Panelden istediğiniz dili yine elle seçebilirsiniz."
+          }
+        },
+        {
+          "id": "translate.swapTarget",
+          "kind": "js",
+          "key": "swapTarget",
+          "type": "enum",
+          "default": "EN",
+          "en": {
+            "label": "Fallback target language",
+            "desc": "Target language used when the text is already in your target language."
+          },
+          "tr": {
+            "label": "Yedek hedef dil",
+            "desc": "Metin zaten hedef dilinizdeyse kullanılacak hedef dil."
+          },
+          "options": [
+            {
+              "v": "TR",
+              "en": "Turkish",
+              "tr": "Türkçe"
+            },
+            {
+              "v": "EN",
+              "en": "English",
+              "tr": "İngilizce"
+            },
+            {
+              "v": "DE",
+              "en": "German",
+              "tr": "Almanca"
+            },
+            {
+              "v": "FR",
+              "en": "French",
+              "tr": "Fransızca"
+            },
+            {
+              "v": "ES",
+              "en": "Spanish",
+              "tr": "İspanyolca"
+            },
+            {
+              "v": "IT",
+              "en": "Italian",
+              "tr": "İtalyanca"
+            },
+            {
+              "v": "PT",
+              "en": "Portuguese",
+              "tr": "Portekizce"
+            },
+            {
+              "v": "RU",
+              "en": "Russian",
+              "tr": "Rusça"
+            },
+            {
+              "v": "AR",
+              "en": "Arabic",
+              "tr": "Arapça"
+            },
+            {
+              "v": "ZH",
+              "en": "Chinese",
+              "tr": "Çince"
+            },
+            {
+              "v": "JA",
+              "en": "Japanese",
+              "tr": "Japonca"
+            },
+            {
+              "v": "KO",
+              "en": "Korean",
+              "tr": "Korece"
+            },
+            {
+              "v": "NL",
+              "en": "Dutch",
+              "tr": "Felemenkçe"
+            },
+            {
+              "v": "PL",
+              "en": "Polish",
+              "tr": "Lehçe"
+            },
+            {
+              "v": "UK",
+              "en": "Ukrainian",
+              "tr": "Ukraynaca"
+            }
+          ]
+        },
+        {
+          "id": "translate.requireConfident",
+          "kind": "js",
+          "key": "requireConfident",
+          "type": "bool",
+          "default": true,
+          "en": {
+            "label": "Require a confident detection",
+            "desc": "Ignore the language detector when it is not sure (very short or mixed text). Turn off to use its best guess anyway."
+          },
+          "tr": {
+            "label": "Emin algılama iste",
+            "desc": "Algılayıcı emin değilse (çok kısa ya da karışık metin) sonucu yok sayar. Kapatırsanız en iyi tahmini yine de kullanır."
+          }
+        },
+        {
+          "id": "translate.wordAlternatives",
+          "kind": "js",
+          "key": "wordAlternatives",
+          "type": "bool",
+          "default": true,
+          "en": {
+            "label": "Alternative translations on double-click (Google)",
+            "desc": "Double-click a word in a Google result to choose another translation of its sentence or clause. Uses Google's unofficial web endpoint, which may stop working at any time."
+          },
+          "tr": {
+            "label": "Çift tıklayınca alternatif çeviriler (Google)",
+            "desc": "Google sonucunda bir kelimeye çift tıklayınca o cümlenin ya da kısmın başka çevirilerini seçebilirsiniz. Google'ın resmi olmayan web uç noktasını kullanır, her an çalışmayabilir."
+          }
+        },
+        {
+          "id": "translate.alternativeUnit",
+          "kind": "js",
+          "key": "alternativeUnit",
+          "type": "enum",
+          "default": "sentence",
+          "en": {
+            "label": "Alternatives unit",
+            "desc": "What a double-click selects and replaces: a whole sentence (up to the period) or only the comma-separated part."
+          },
+          "tr": {
+            "label": "Alternatif birimi",
+            "desc": "Çift tıklama neyi seçip değiştirsin: tüm cümle (noktaya kadar) ya da yalnızca virgülle ayrılan kısım."
+          },
+          "options": [
+            {
+              "v": "sentence",
+              "en": "Sentence (period-based)",
+              "tr": "Cümle (nokta bazlı)"
+            },
+            {
+              "v": "clause",
+              "en": "Clause (comma-based)",
+              "tr": "Kısım (virgül bazlı)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "translate-prefs",
+      "file": "prefs.js",
+      "title": {
+        "en": "Translation service and keys (prefs.js)",
+        "tr": "Çeviri servisi ve anahtarlar (prefs.js)"
+      },
+      "settings": [
+        {
+          "id": "pref.provider",
+          "kind": "pref",
+          "key": "extensions.translate-lite.provider",
+          "type": "enum",
+          "default": "deepl",
+          "en": {
+            "label": "Translation service",
+            "desc": "Which service the context-menu translation uses. You can also switch it from the right-click menu."
+          },
+          "tr": {
+            "label": "Çeviri servisi",
+            "desc": "Sağ tık çevirisinin hangi servisi kullanacağı. Sağ tık menüsünden de değiştirilebilir."
+          },
+          "options": [
+            {
+              "v": "deepl",
+              "en": "DeepL",
+              "tr": "DeepL"
+            },
+            {
+              "v": "google",
+              "en": "Google",
+              "tr": "Google"
+            }
+          ]
+        },
+        {
+          "id": "pref.targetLang",
+          "kind": "pref",
+          "key": "extensions.translate-lite.targetLang",
+          "type": "enum",
+          "default": "TR",
+          "en": {
+            "label": "Default target language",
+            "desc": "The language text is translated into by default."
+          },
+          "tr": {
+            "label": "Varsayılan hedef dil",
+            "desc": "Metnin varsayılan olarak çevrileceği dil."
+          },
+          "options": [
+            {
+              "v": "TR",
+              "en": "Turkish",
+              "tr": "Türkçe"
+            },
+            {
+              "v": "EN-US",
+              "en": "English (US)",
+              "tr": "İngilizce (ABD)"
+            },
+            {
+              "v": "EN-GB",
+              "en": "English (UK)",
+              "tr": "İngilizce (Birleşik Krallık)"
+            },
+            {
+              "v": "DE",
+              "en": "German",
+              "tr": "Almanca"
+            },
+            {
+              "v": "FR",
+              "en": "French",
+              "tr": "Fransızca"
+            },
+            {
+              "v": "ES",
+              "en": "Spanish",
+              "tr": "İspanyolca"
+            },
+            {
+              "v": "IT",
+              "en": "Italian",
+              "tr": "İtalyanca"
+            },
+            {
+              "v": "PT-BR",
+              "en": "Portuguese (Brazil)",
+              "tr": "Portekizce (Brezilya)"
+            },
+            {
+              "v": "RU",
+              "en": "Russian",
+              "tr": "Rusça"
+            },
+            {
+              "v": "AR",
+              "en": "Arabic",
+              "tr": "Arapça"
+            },
+            {
+              "v": "ZH-HANS",
+              "en": "Chinese (Simplified)",
+              "tr": "Çince (Basitleştirilmiş)"
+            },
+            {
+              "v": "JA",
+              "en": "Japanese",
+              "tr": "Japonca"
+            },
+            {
+              "v": "KO",
+              "en": "Korean",
+              "tr": "Korece"
+            },
+            {
+              "v": "NL",
+              "en": "Dutch",
+              "tr": "Felemenkçe"
+            },
+            {
+              "v": "PL",
+              "en": "Polish",
+              "tr": "Lehçe"
+            },
+            {
+              "v": "UK",
+              "en": "Ukrainian",
+              "tr": "Ukraynaca"
+            }
+          ]
+        },
+        {
+          "id": "pref.deeplApiKey",
+          "kind": "pref",
+          "key": "extensions.translate-lite.deeplApiKey",
+          "type": "secret",
+          "default": "",
+          "en": {
+            "label": "DeepL API key",
+            "desc": "Official DeepL API key. A key ending in \":fx\" is the free plan. Stored in plain text in prefs.js; never commit it. Without a key the DeepL website is used in a small panel."
+          },
+          "tr": {
+            "label": "DeepL API anahtarı",
+            "desc": "Resmi DeepL API anahtarı. \":fx\" ile biten anahtar ücretsiz plandır. prefs.js içinde düz metin olarak saklanır; depoya göndermeyin. Anahtar yoksa DeepL sitesi küçük bir panelde açılır."
+          }
+        },
+        {
+          "id": "pref.googleApiKey",
+          "kind": "pref",
+          "key": "extensions.translate-lite.googleApiKey",
+          "type": "secret",
+          "default": "",
+          "en": {
+            "label": "Google API key",
+            "desc": "Google Cloud Translation (Basic, v2) API key. Stored in plain text in prefs.js; never commit it. Without a key a hidden Google Translate page is used."
+          },
+          "tr": {
+            "label": "Google API anahtarı",
+            "desc": "Google Cloud Translation (Basic, v2) API anahtarı. prefs.js içinde düz metin olarak saklanır; depoya göndermeyin. Anahtar yoksa gizli bir Google Translate sayfası kullanılır."
+          }
+        },
+        {
+          "id": "pref.autoFallback",
+          "kind": "pref",
+          "key": "extensions.translate-lite.autoFallback",
+          "type": "bool",
+          "default": true,
+          "en": {
+            "label": "Switch service when quota runs out",
+            "desc": "If the selected service reports that its quota is used up, switch to the other service automatically."
+          },
+          "tr": {
+            "label": "Kota dolunca servis değiştir",
+            "desc": "Seçili servis kotasının dolduğunu bildirirse otomatik olarak öbür servise geçilir."
+          }
+        },
+        {
+          "id": "pref.webMode",
+          "kind": "pref",
+          "key": "extensions.translate-lite.webMode",
+          "type": "enum",
+          "default": "auto",
+          "en": {
+            "label": "Selection translation without a key",
+            "desc": "How selected text is translated when there is no API key: Auto (Google hidden page, DeepL small panel), Hidden only, visible Panel, or a new Tab."
+          },
+          "tr": {
+            "label": "Anahtarsız seçili metin çevirisi",
+            "desc": "API anahtarı yokken seçili metnin nasıl çevrileceği: Otomatik (Google gizli sayfa, DeepL küçük panel), yalnızca gizli, görünür panel ya da yeni sekme."
+          },
+          "options": [
+            {
+              "v": "auto",
+              "en": "Auto",
+              "tr": "Otomatik"
+            },
+            {
+              "v": "hidden",
+              "en": "Hidden only",
+              "tr": "Yalnızca gizli"
+            },
+            {
+              "v": "panel",
+              "en": "Visible panel",
+              "tr": "Görünür panel"
+            },
+            {
+              "v": "tab",
+              "en": "New tab",
+              "tr": "Yeni sekme"
+            }
+          ]
+        },
+        {
+          "id": "pref.maxChars",
+          "kind": "pref",
+          "key": "extensions.translate-lite.maxChars",
+          "type": "int",
+          "default": 40000,
+          "en": {
+            "label": "Page translation limit",
+            "desc": "Maximum number of characters sent for one page translation (protects your quota)."
+          },
+          "tr": {
+            "label": "Sayfa çevirisi sınırı",
+            "desc": "Bir sayfa çevirisinde gönderilecek en çok karakter sayısı (kotanızı korur)."
+          },
+          "min": 1000,
+          "max": 500000,
+          "step": 1000
+        }
+      ]
+    },
+    {
+      "id": "lifecycle",
+      "file": "chrome/tab_lifecycle.uc.js",
+      "title": {
+        "en": "Tab memory management (tab_lifecycle.uc.js)",
+        "tr": "Sekme bellek yönetimi (tab_lifecycle.uc.js)"
+      },
+      "note": {
+        "en": "These are the basic settings. Many more (per-process actions, exempt sites, timings) are documented inside the file: use \"Open file\".",
+        "tr": "Bunlar temel ayarlardır. Çok daha fazlası (süreç başına işlemler, muaf siteler, süreler) dosyanın içinde açıklanmıştır: \"Dosyayı aç\" düğmesini kullanın."
+      },
+      "settings": [
+        {
+          "id": "lifecycle.SLEEP_AFTER_SECONDS",
+          "kind": "js",
+          "key": "SLEEP_AFTER_SECONDS",
+          "type": "int",
+          "default": 1,
+          "en": {
+            "label": "Sleep a tab after (seconds)",
+            "desc": "A tab you left is put to sleep (timers stop, content stays) after this many seconds."
+          },
+          "tr": {
+            "label": "Sekmeyi şu kadar sn sonra uyut",
+            "desc": "Ayrıldığınız sekme bu kadar saniye sonra uykuya geçer (zamanlayıcılar durur, içerik kalır)."
+          },
+          "min": 0,
+          "max": 300,
+          "step": 1
+        },
+        {
+          "id": "lifecycle.DEEP_SLEEP_AFTER_SECONDS",
+          "kind": "js",
+          "key": "DEEP_SLEEP_AFTER_SECONDS",
+          "type": "int",
+          "default": 5,
+          "en": {
+            "label": "Deep sleep after (seconds)",
+            "desc": "A tab that stays hidden this long goes into deep sleep and is not woken again."
+          },
+          "tr": {
+            "label": "Derin uykuya şu kadar sn sonra geç",
+            "desc": "Bu kadar saniye görünmez kalan sekme derin uykuya geçer ve bir daha uyandırılmaz."
+          },
+          "min": 0,
+          "max": 3600,
+          "step": 1
+        },
+        {
+          "id": "lifecycle.TAB_TRIM_AFTER_SECONDS",
+          "kind": "js",
+          "key": "TAB_TRIM_AFTER_SECONDS",
+          "type": "int",
+          "default": 10,
+          "en": {
+            "label": "Trim the tab process after (seconds)",
+            "desc": "Memory of a hidden tab's process is trimmed after this many seconds. 0 = off."
+          },
+          "tr": {
+            "label": "Sekme sürecini şu kadar sn sonra kırp",
+            "desc": "Görünmez sekmenin sürecinin belleği bu kadar saniye sonra kırpılır. 0 = kapalı."
+          },
+          "min": 0,
+          "max": 3600,
+          "step": 1
+        },
+        {
+          "id": "lifecycle.DISCARD_AFTER_SECONDS",
+          "kind": "js",
+          "key": "DISCARD_AFTER_SECONDS",
+          "type": "int",
+          "default": 1800,
+          "en": {
+            "label": "Discard a tab after (seconds)",
+            "desc": "A tab hidden this long is discarded: its process closes and the page reloads when you click it. 0 = never."
+          },
+          "tr": {
+            "label": "Sekmeyi şu kadar sn sonra boşalt",
+            "desc": "Bu kadar saniye görünmez kalan sekme boşaltılır: süreci kapanır, tıklayınca sayfa yeniden yüklenir. 0 = hiç."
+          },
+          "min": 0,
+          "max": 604800,
+          "step": 60
+        },
+        {
+          "id": "lifecycle.DISCARD_SKIP_PINNED",
+          "kind": "js",
+          "key": "DISCARD_SKIP_PINNED",
+          "type": "bool",
+          "default": true,
+          "en": {
+            "label": "Never discard pinned tabs",
+            "desc": "Pinned tabs are not discarded (sleep and trimming still apply)."
+          },
+          "tr": {
+            "label": "Sabit sekmeleri hiç boşaltma",
+            "desc": "Sabitlenmiş sekmeler boşaltılmaz (uyku ve kırpma yine uygulanır)."
+          }
+        },
+        {
+          "id": "lifecycle.DRY_RUN_DISCARD",
+          "kind": "js",
+          "key": "DRY_RUN_DISCARD",
+          "type": "bool",
+          "default": false,
+          "en": {
+            "label": "Discard dry run",
+            "desc": "Nothing is discarded; \"would discard\" is only written to the log (for trying it out)."
+          },
+          "tr": {
+            "label": "Boşaltma denemesi",
+            "desc": "Hiçbir şey boşaltılmaz; yalnızca günlüğe \"boşaltırdım\" yazılır (denemek için)."
+          }
+        },
+        {
+          "id": "lifecycle.MINIMIZE_TRIM_ENABLED",
+          "kind": "js",
+          "key": "MINIMIZE_TRIM_ENABLED",
+          "type": "bool",
+          "default": true,
+          "en": {
+            "label": "Trim everything when minimized",
+            "desc": "When no page is visible (window minimized or fully covered), memory of all processes is cleaned and trimmed."
+          },
+          "tr": {
+            "label": "Küçültülünce her şeyi kırp",
+            "desc": "Hiçbir sayfa görünmediğinde (pencere küçültüldü ya da tamamen örtüldü) tüm süreçlerin belleği temizlenip kırpılır."
+          }
+        },
+        {
+          "id": "lifecycle.ACTIVE_IDLE_SECONDS",
+          "kind": "js",
+          "key": "ACTIVE_IDLE_SECONDS",
+          "type": "int",
+          "default": 17,
+          "en": {
+            "label": "Trim when idle for (seconds)",
+            "desc": "While you are idle (mouse and keyboard still for this many seconds) the main process and GPU are trimmed. 0 = off."
+          },
+          "tr": {
+            "label": "Boşta şu kadar sn kalınca kırp",
+            "desc": "Siz boştayken (fare ve klavye bu kadar saniyedir hareketsiz) ana süreç ve GPU kırpılır. 0 = kapalı."
+          },
+          "min": 0,
+          "max": 3600,
+          "step": 1
+        },
+        {
+          "id": "lifecycle.ENABLE_LOGGING",
+          "kind": "js",
+          "key": "ENABLE_LOGGING",
+          "type": "bool",
+          "default": false,
+          "en": {
+            "label": "Write a log file",
+            "desc": "Writes what it does to chrome\\memlog.txt (rotates at 400 KB). Off = nothing is written."
+          },
+          "tr": {
+            "label": "Günlük dosyası yaz",
+            "desc": "Yaptıklarını chrome\\memlog.txt dosyasına yazar (400 KB'ta döner). Kapalıysa hiçbir şey yazılmaz."
+          }
+        }
+      ]
+    }
+  ]
+}
