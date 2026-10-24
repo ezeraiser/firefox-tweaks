@@ -1,10 +1,26 @@
-// tab_lifecycle.uc.js - Sekme yaşam döngüsü: uyku -> derin uyku -> kırpma -> boşaltma (TEK dosya, TEK saat)
+// EN: tab_lifecycle.uc.js - Tab lifecycle: sleep -> deep sleep -> trim -> discard (ONE file, ONE clock)
+// TR: tab_lifecycle.uc.js - Sekme yaşam döngüsü: uyku -> derin uyku -> kırpma -> boşaltma (TEK dosya, TEK saat)
 //
-// tab_freezer + tab_trimmer + tab_discarder betiklerinin yerine geçer. Üçü ayrı saatlerle çalışıp birbirini
+// EN: Replaces the tab_freezer + tab_trimmer + tab_discarder scripts. The three ran on separate clocks and did not
+// know about each other, so they collided; here every tab has a single timeline. These three scripts must NOT be
+// in the chrome folder while using this script (if both run, they freeze and trim the same tab twice).
+// TR: tab_freezer + tab_trimmer + tab_discarder betiklerinin yerine geçer. Üçü ayrı saatlerle çalışıp birbirini
 // bilmediği için çakışıyordu; burada her sekmenin tek bir zaman çizelgesi var. Bu betiği kullanırken o üç
 // betik chrome klasöründe OLMAMALI (ikisi birden çalışırsa aynı sekmeyi iki kez dondurup kırparlar).
 //
-// ZAMAN ÇİZELGESİ (her sekme için, sekme GÖRÜNMEZ OLDUĞU anı 0 sayarak; süreler CONFIG'de değişir):
+// EN: TIMELINE (for each tab, counting the moment the tab becomes HIDDEN as 0; durations are changed in CONFIG):
+//    0 s    You left the tab (switched to another tab or the window was minimized).
+//    2 s    1) SLEEP: the page's timers are stopped (content is kept). It may wake briefly at intervals while asleep.
+//           2) GC + CC + heap-minimize in that tab's process (garbage collection; memory REALLY drops).
+//   60 s    3) DEEP SLEEP: it is never woken again.
+//           4) If memory has grown noticeably since the first cleanup, one more GC + CC + heap-minimize.
+//  +60 s    5) MAIN PROCESS + GPU are trimmed (60 s after deep sleep; only if no page is visible).
+//  180 s    6) That tab's process is trimmed (working set: pages leave RAM, content stays).
+//  900 s    7) The tab is DISCARDED: the process closes, memory is fully freed; it reloads on click.
+//  + When the window is minimized (no page is visible), the "global minimize" SEQUENCE: 1) immediate global GC/CC/memory cleanup (NO trim),
+//    2) all tabs go to sleep, 3) then to deep sleep (the timeline above, including the selected tab), 4) LAST, all processes are trimmed;
+//    while idle it repeats periodically (cleanup first, then trim).
+// TR: ZAMAN ÇİZELGESİ (her sekme için, sekme GÖRÜNMEZ OLDUĞU anı 0 sayarak; süreler CONFIG'de değişir):
 //    0 sn   Sekmeden ayrıldınız (başka sekmeye geçtiniz ya da pencere küçüldü).
 //    2 sn   1) UYKU: sayfanın zamanlayıcıları durdurulur (içerik korunur). Uykuda kısa aralıklarla uyanabilir.
 //           2) O sekmenin sürecinde GC + CC + heap-minimize (çöp toplama, bellek GERÇEKTEN düşer).
@@ -17,11 +33,18 @@
 //    2) tüm sekmeler uykuya, 3) derin uykuya girer (yukarıdaki çizelge, seçili sekme dahil), 4) EN SONDA tüm süreçler kırpılır;
 //    boşta kaldıkça periyodik tekrar (önce temizlik, sonra kırpma).
 //
-// MUAFİYETLER: Ses/video/PiP/paylaşım yapan sekmeler ve yüklenmekte olanlar zincirin HİÇBİR adımına girmez
+// EN: EXEMPTIONS: Tabs playing audio/video/PiP/sharing and tabs that are loading never enter ANY step of the chain
+// (the process of an audio-playing tab is trimmed only while no page is visible, after
+// TRIM_MEDIA_TAB_AFTER_HIDDEN_SECONDS, then every TRIM_MEDIA_TAB_EVERY_SECONDS). Pinned tabs are only not
+// discarded. In a tab whose process is shared with a visible/media tab, process-level steps (GC, trim, discard)
+// are skipped so the active tab does not slow down.
+// TR: MUAFİYETLER: Ses/video/PiP/paylaşım yapan sekmeler ve yüklenmekte olanlar zincirin HİÇBİR adımına girmez
 // (ses çalan sekmenin süreci yalnızca hiçbir sayfa görünmezken TRIM_MEDIA_TAB_AFTER_HIDDEN_SECONDS sonra, sonra TRIM_MEDIA_TAB_EVERY_SECONDS'ta bir kırpılır). Sabitlenmiş sekmeler yalnızca boşaltılmaz. Süreci görünür/medya sekmeyle paylaşılan
 // sekmede süreç düzeyindeki adımlar (GC, kırpma, boşaltma) atlanır, ki aktif sekme yavaşlamasın.
 //
-// Günlük: <profil>\chrome\memlog.txt (ENABLE_LOGGING). Kapalıyken dosyaya HİÇBİR şey yazılmaz (hatalar yalnızca Tarayıcı Konsolu'na gider).
+// EN: Log: <profile>\chrome\memlog.txt (ENABLE_LOGGING). While it is off, NOTHING is written to the file (errors go
+// only to the Browser Console).
+// TR: Günlük: <profil>\chrome\memlog.txt (ENABLE_LOGGING). Kapalıyken dosyaya HİÇBİR şey yazılmaz (hatalar yalnızca Tarayıcı Konsolu'na gider).
 (function() {
     'use strict';
 
@@ -29,10 +52,38 @@
     if (typeof gBrowser === 'undefined') return;
 
     // ===========================================
+    // SETTINGS - IN ORDER OF TRIGGERING
     // AYARLAR - TETİKLENME SIRASINA GÖRE
     // ===========================================
     //
-    // ZİNCİR HARİTASI (ok = "bunu tetikler"). Süreler, sekmenin GÖRÜNMEZ OLDUĞU anı 0 sayar:
+    // EN: CHAIN MAP (arrow = "triggers this"). Times count from the moment the tab becomes HIDDEN as 0:
+    //
+    //   [0 Base]  checked every TICK_SECONDS seconds; SKIP_ACTIVE_MEDIA_TABS removes media tabs from the chain.
+    //        |
+    //        v   when leaving the tab (switching to another tab or minimizing the window)
+    //   [1 SLEEP]        SLEEP_AFTER_SECONDS (2 s)  --> timers stop (except SLEEP_EXEMPT_HOSTS)
+    //        |                                          + RECLAIM_ON_SLEEP: GC/CC/memory in that tab's process
+    //        |                                          + SLEEP_WAKE_INTERVAL/DURATION: short wake-ups while asleep
+    //        v
+    //   [2 DEEP SLEEP]  DEEP_SLEEP_AFTER_SECONDS (60 s) --> never woken again
+    //        |                                          + DEEP_RECLAIM_IF_GROWN_MB: 2nd GC/CC/memory if memory has grown
+    //        |
+    //        +--> [3 MAIN PROCESS + GPU]  MAIN_GPU_TRIM_AFTER_DEEP_SECONDS (+60 s), MAIN_GPU_MIN_INTERVAL_SECONDS (300 s)
+    //        v                         (only if no page is visible)
+    //   [4 TAB TRIM]  TAB_TRIM_AFTER_SECONDS (180 s) --> that tab's process is trimmed
+    //        |
+    //        v
+    //   [5 DISCARD]      DISCARD_AFTER_SECONDS (900 s) --> tab is discarded (if the DISCARD_* rules pass)
+    //
+    //   [6 GLOBAL MINIMIZE] when the window is minimized (no page is visible), TOGETHER with the chain above:
+    //        MINIMIZE_RECLAIM_AFTER_SECONDS (3 s): immediate global GC/CC/memory (NO trim)
+    //          --> tabs go through steps [1 SLEEP] and [2 DEEP SLEEP] (including the selected tab)
+    //          --> DEEP_SLEEP_AFTER_SECONDS + MINIMIZE_TRIM_AFTER_DEEP_SECONDS (60+10 s): ALL processes are trimmed
+    //          --> MINIMIZE_RETRIM_MINUTES (10 min): while idle, cleanup then trim repeats
+    //        Trim scope: PROCESS_ACTIONS (per process class); while media plays: TRIM_OTHERS_WHILE_MEDIA_PLAYS.
+    //
+    //   When the tab becomes visible again (or the window is restored), that tab's chain is cancelled, sleep is released, and the timer restarts from zero.
+    // TR: ZİNCİR HARİTASI (ok = "bunu tetikler"). Süreler, sekmenin GÖRÜNMEZ OLDUĞU anı 0 sayar:
     //
     //   [0 Temel]  TICK_SECONDS saniyede bir bakılır; SKIP_ACTIVE_MEDIA_TABS ile medya sekmeleri zincirden çıkarılır.
     //        |
@@ -61,18 +112,29 @@
     //   Sekme tekrar görününce (ya da pencere geri açılınca) o sekmenin zinciri iptal olur, uyku çözülür, süre sıfırdan başlar.
     const CONFIG = {
         // ==================================================================
+        // 0) BASICS (affect the whole chain)
         // 0) TEMEL (zincirin hepsini etkiler)
         // ==================================================================
 
         /**
-         * Betik kaç saniyede bir sekmelere baksın? Zincirdeki tüm sürelerin hassasiyetini belirler (1 = en çok 1 sn
+         * EN: How often (in seconds) should the script check the tabs? It determines the precision of all durations in
+         * the chain (1 = at most 1 s deviation). It is a light task; you do not need to change it. TRIGGERS: every
+         * step below (steps run by checking at this tick whether their time has elapsed).
+         *
+         * TR: Betik kaç saniyede bir sekmelere baksın? Zincirdeki tüm sürelerin hassasiyetini belirler (1 = en çok 1 sn
          * sapma). Hafif bir iştir; değiştirmenize gerek yok.
          * TETİKLER: aşağıdaki her adımı (adımlar bu kontrolde süresi dolmuş mu diye bakılarak çalışır).
          */
         TICK_SECONDS: 5,
 
         /**
-         * Her şey yerleştiğinde (hiçbir sayfa görünür değil ve tüm sekmeler derin uykuda/medya) kontrol bu kadar saniyede bir
+         * EN: When everything has settled (no page is visible and all tabs are in deep sleep/media), the check runs
+         * once every this many seconds; with no new work left, a 1 s loop would be wasted. It returns to
+         * TICK_SECONDS immediately when the window comes to the front, a tab is selected, or an unsettled tab is
+         * seen. 0 = this behavior is off. Limit: idle repeats (ACTIVE_IDLE_REPEAT_MINUTES,
+         * MINIMIZE_RETRIM_MINUTES) are delayed by at most this many seconds.
+         *
+         * TR: Her şey yerleştiğinde (hiçbir sayfa görünür değil ve tüm sekmeler derin uykuda/medya) kontrol bu kadar saniyede bir
          * yapılır; yapılacak yeni bir iş kalmadığı için 1 sn'lik döngü boşa çalışırdı. Pencere öne gelince, sekme seçilince
          * ya da yerleşmemiş bir sekme görülünce hemen TICK_SECONDS'a döner. 0 = bu davranış kapalı. Sınır: boşta tekrar
          * (ACTIVE_IDLE_REPEAT_MINUTES, MINIMIZE_RETRIM_MINUTES) en çok bu kadar saniye gecikir.
@@ -80,18 +142,29 @@
         TICK_SETTLED_SECONDS: 60,
 
         /**
-         * true: Ses çalan / Picture-in-Picture / ekran-kamera paylaşan sekmeler zincirin HİÇBİR adımına (uyku, GC,
+         * EN: true: Tabs playing audio / Picture-in-Picture / sharing screen or camera never enter ANY step of the
+         * chain (sleep, GC, trim, discard) and their processes are not trimmed. Setting it to false is not
+         * recommended (music/video would be cut). AFFECTS: all of [1]-[6].
+         *
+         * TR: true: Ses çalan / Picture-in-Picture / ekran-kamera paylaşan sekmeler zincirin HİÇBİR adımına (uyku, GC,
          * kırpma, boşaltma) girmez ve süreçleri kırpılmaz. false yapmanız önerilmez (müzik/video kesilir).
          * ETKİLER: [1]-[6] hepsi.
          */
         SKIP_ACTIVE_MEDIA_TABS: true,
 
         // ==================================================================
+        // 1) SLEEP - SLEEP_AFTER_SECONDS after leaving the tab
         // 1) UYKU - sekmeden ayrıldıktan SLEEP_AFTER_SECONDS sonra
         // ==================================================================
 
         /**
-         * Sekmeden ayrıldıktan kaç saniye sonra sekme uykuya geçsin? Uyku = setTimeout/setInterval durur, sayfa
+         * EN: How many seconds after leaving a tab should it go to sleep? Sleep = setTimeout/setInterval stop, page
+         * content and state stay as they are. If set too low (0-1), it needlessly freezes and thaws when you
+         * switch quickly between tabs. 2-5 is reasonable. TRIGGERED BY: the tab becoming hidden. TRIGGERS:
+         * RECLAIM_ON_SLEEP (at the same time), SLEEP_WAKE_* (wake cycle), and when the time elapses, [2 DEEP
+         * SLEEP].
+         *
+         * TR: Sekmeden ayrıldıktan kaç saniye sonra sekme uykuya geçsin? Uyku = setTimeout/setInterval durur, sayfa
          * içeriği ve durumu aynen kalır. Çok küçük (0-1) yaparsanız sekmeler arasında hızlı gidip gelirken gereksiz
          * dondurup çözer. 2-5 mantıklıdır.
          * TETİKLEYEN: sekmenin görünmez olması. TETİKLER: RECLAIM_ON_SLEEP (aynı anda), SLEEP_WAKE_* (uyanma döngüsü),
@@ -100,7 +173,12 @@
         SLEEP_AFTER_SECONDS: 1,
 
         /**
-         * true: Sekme uykuya geçince O SEKMENİN sürecinde GC + CC + heap-minimize çalışır. Sayfa içeriği silinmez,
+         * EN: true: When a tab goes to sleep, GC + CC + heap-minimize runs in THAT TAB'S process. Page content is not
+         * deleted, only garbage is discarded; memory REALLY drops. Skipped if the process is shared with a
+         * visible/media tab. TRIGGERED BY: [1] sleep. TRIGGERS: the memory measurement for
+         * DEEP_RECLAIM_IF_GROWN_MB (the "post-cleanup memory" is recorded 3 s later).
+         *
+         * TR: true: Sekme uykuya geçince O SEKMENİN sürecinde GC + CC + heap-minimize çalışır. Sayfa içeriği silinmez,
          * yalnızca çöp atılır; bellek GERÇEKTEN düşer. Süreç görünür/medya sekmeyle paylaşılıyorsa atlanır.
          * TETİKLEYEN: [1] uyku. TETİKLER: DEEP_RECLAIM_IF_GROWN_MB için bellek ölçümü (3 sn sonra "temizlik sonrası
          * bellek" kaydedilir).
@@ -108,35 +186,60 @@
         RECLAIM_ON_SLEEP: true,
 
         /**
-         * Uykudaki (henüz derin uykuya geçmemiş) sekme kaç saniyede bir kısa süre uyansın? Bazı siteler arka planda
+         * EN: How often (in seconds) should a sleeping tab (not yet in deep sleep) wake briefly? Some sites want to
+         * run occasionally in the background. 0 = never wake while asleep either. There is NO waking in deep
+         * sleep. TRIGGERED BY: [1] sleep. STOPPED BY: [2] deep sleep.
+         *
+         * TR: Uykudaki (henüz derin uykuya geçmemiş) sekme kaç saniyede bir kısa süre uyansın? Bazı siteler arka planda
          * ara sıra çalışmak ister. 0 = uykuda da hiç uyandırma. Derin uykuda uyandırma HİÇ yoktur.
          * TETİKLEYEN: [1] uyku. DURDURAN: [2] derin uyku.
          */
         SLEEP_WAKE_INTERVAL_SECONDS: 0,
 
-        /** Uyanık kalma süresi (saniye). Yalnızca SLEEP_WAKE_INTERVAL_SECONDS > 0 ise kullanılır. */
+        /**
+         * EN: Awake duration (seconds). Used only if SLEEP_WAKE_INTERVAL_SECONDS > 0.
+         *
+         * TR: Uyanık kalma süresi (saniye). Yalnızca SLEEP_WAKE_INTERVAL_SECONDS > 0 ise kullanılır.
+         */
         SLEEP_WAKE_DURATION_SECONDS: 0,
 
         /**
-         * Bu sitelerin sekmeleri ASLA uyutulmaz (alt alan adları dahil: "google.com" yazarsanız mail.google.com da
+         * EN: Tabs of these sites are NEVER put to sleep (subdomains included: if you write "google.com",
+         * mail.google.com is covered too). For things that must keep a background connection, such as
+         * chat/e-mail/meetings. Memory cleanup (GC/CC), trim and (unless in DISCARD_EXEMPT_HOSTS) discard still
+         * apply to these tabs.
+         *
+         * TR: Bu sitelerin sekmeleri ASLA uyutulmaz (alt alan adları dahil: "google.com" yazarsanız mail.google.com da
          * kapsanır). Sohbet/e-posta/toplantı gibi arka planda bağlantı tutması gerekenler için. Bu sekmelerde yine de
          * bellek temizliği (GC/CC), kırpma ve (DISCARD_EXEMPT_HOSTS'ta değilse) boşaltma uygulanır.
          */
         SLEEP_EXEMPT_HOSTS: [],
 
         // ==================================================================
+        // 2) DEEP SLEEP - DEEP_SLEEP_AFTER_SECONDS after leaving the tab
         // 2) DERİN UYKU - sekmeden ayrıldıktan DEEP_SLEEP_AFTER_SECONDS sonra
         // ==================================================================
 
         /**
-         * Sekme kaç saniye görünmez kalınca derin uykuya geçsin? Derin uykuda sekme artık hiç uyandırılmaz.
+         * EN: After how many seconds hidden should the tab go into deep sleep? In deep sleep the tab is never woken
+         * again. TRIGGERED BY: the tab staying hidden after [1] sleep. TRIGGERS: DEEP_RECLAIM_IF_GROWN_MB (the
+         * second cleanup), the [3] main process + GPU counter (MAIN_GPU_TRIM_AFTER_DEEP_SECONDS) and the global
+         * trim time in [6].
+         *
+         * TR: Sekme kaç saniye görünmez kalınca derin uykuya geçsin? Derin uykuda sekme artık hiç uyandırılmaz.
          * TETİKLEYEN: sekmenin [1] uykudan sonra da görünmez kalması. TETİKLER: DEEP_RECLAIM_IF_GROWN_MB (ikinci
          * temizlik), [3] ana süreç + GPU sayacı (MAIN_GPU_TRIM_AFTER_DEEP_SECONDS) ve [6]'daki genel kırpma süresi.
          */
         DEEP_SLEEP_AFTER_SECONDS: 5,
 
         /**
-         * Derin uykuya geçerken ikinci bellek temizliği yalnızca, sürecin belleği ilk temizlikten (RECLAIM_ON_SLEEP)
+         * EN: When entering deep sleep, the second memory cleanup runs only if the process's memory has grown by at
+         * least this many MB since the first cleanup (RECLAIM_ON_SLEEP). This is because memory hardly grows while
+         * timers are stopped, and every cleanup leaves JIT code cold and slows the first moment after returning to
+         * the tab. 0 = always do it. TRIGGERED BY: [2] deep sleep (compares against the RECLAIM_ON_SLEEP
+         * measurement).
+         *
+         * TR: Derin uykuya geçerken ikinci bellek temizliği yalnızca, sürecin belleği ilk temizlikten (RECLAIM_ON_SLEEP)
          * beri en az bu kadar MB büyüdüyse yapılır. Çünkü zamanlayıcılar durmuşken bellek pek büyümez ve her temizlik,
          * sekmeye dönünce JIT kodunu soğuk bırakıp ilk anı yavaşlatır. 0 = her zaman yap.
          * TETİKLEYEN: [2] derin uyku (RECLAIM_ON_SLEEP ölçümüyle kıyaslar).
@@ -144,11 +247,19 @@
         DEEP_RECLAIM_IF_GROWN_MB: 30,
 
         // ==================================================================
+        // 3) MAIN PROCESS + GPU TRIM - MAIN_GPU_TRIM_AFTER_DEEP_SECONDS after deep sleep
         // 3) ANA SÜREÇ + GPU KIRPMA - derin uykudan MAIN_GPU_TRIM_AFTER_DEEP_SECONDS sonra
         // ==================================================================
 
         /**
-         * Bir sekme derin uykuya girdikten kaç saniye sonra ana süreç + GPU kırpılsın? Tek bir sayaç vardır: sayaç
+         * EN: How many seconds after a tab enters deep sleep should the main process + GPU be trimmed? There is a
+         * single counter: while it is running, another tab entering deep sleep does not restart it; when it
+         * expires the trim happens, and the next deep sleep starts a new counter. Trimming happens ONLY if no page
+         * is visible on screen; trimming the main process and GPU while you use a tab causes stutter, so in that
+         * case the counter is silently cancelled. TRIGGERED BY: [2] deep sleep. While media plays it depends on
+         * TRIM_OTHERS_WHILE_MEDIA_PLAYS.
+         *
+         * TR: Bir sekme derin uykuya girdikten kaç saniye sonra ana süreç + GPU kırpılsın? Tek bir sayaç vardır: sayaç
          * çalışırken başka bir sekmenin derin uykuya girmesi onu yeniden başlatmaz; dolunca kırpılır, sonraki derin
          * uyku yeni sayaç başlatır. Kırpma YALNIZCA hiçbir sayfa ekranda görünmüyorsa yapılır; siz bir sekmeyi
          * kullanırken ana süreç ve GPU kırpılırsa takılma olur, bu yüzden o durumda sayaç sessizce iptal edilir.
@@ -156,46 +267,77 @@
          */
         MAIN_GPU_TRIM_AFTER_DEEP_SECONDS: 10,
 
-        /** İki ana süreç + GPU kırpması arasında en az kaç saniye geçsin? (Sık sık kırpmayı önler; [6] genel kırpma da sayılır.) */
+        /**
+         * EN: Minimum number of seconds between two main process + GPU trims? (Prevents trimming too often; the [6]
+         * global trim counts too.)
+         *
+         * TR: İki ana süreç + GPU kırpması arasında en az kaç saniye geçsin? (Sık sık kırpmayı önler; [6] genel kırpma da sayılır.)
+         */
         MAIN_GPU_MIN_INTERVAL_SECONDS: 120,
 
         // ==================================================================
+        // 4) TAB PROCESS TRIM - TAB_TRIM_AFTER_SECONDS after leaving the tab
         // 4) SEKME SÜRECİ KIRPMA - sekmeden ayrıldıktan TAB_TRIM_AFTER_SECONDS sonra
         // ==================================================================
 
         /**
-         * Sekme kaç saniye görünmez kalınca O SEKMENİN süreci kırpılsın (EmptyWorkingSet)? Sayfalar RAM'den çıkar,
+         * EN: After how many seconds hidden should THAT TAB'S process be trimmed (EmptyWorkingSet)? Pages leave RAM,
+         * content is not lost. Skipped if the process is shared with a visible/media tab (retried after 30 s). 0 =
+         * off. TRIGGERED BY: the tab staying hidden after [2] deep sleep (memory has been cleaned first).
+         *
+         * TR: Sekme kaç saniye görünmez kalınca O SEKMENİN süreci kırpılsın (EmptyWorkingSet)? Sayfalar RAM'den çıkar,
          * içerik kaybolmaz. Süreç görünür/medya sekmeyle paylaşılıyorsa atlanır (30 sn sonra yeniden denenir).
          * 0 = kapalı. TETİKLEYEN: sekmenin [2] derin uykudan sonra da görünmez kalması (bellek önce temizlenmiş olur).
          */
         TAB_TRIM_AFTER_SECONDS: 10,
 
         // ==================================================================
+        // 5) DISCARD - DISCARD_AFTER_SECONDS after leaving the tab
         // 5) BOŞALTMA - sekmeden ayrıldıktan DISCARD_AFTER_SECONDS sonra
         // ==================================================================
 
         /**
-         * Sekme kaç saniye görünmez kalınca boşaltılsın (discard)? Süreç kapanır, bellek gerçekten serbest kalır;
+         * EN: After how many seconds hidden should the tab be discarded? The process closes and memory is truly freed;
+         * clicking the tab reloads the page (scroll/form data returns, live state may be lost). 0 = discard off.
+         * The chain of a discarded tab ends; it starts from zero when reopened. TRIGGERED BY: the tab staying
+         * hidden after [4] tab trim. The DISCARD_* rules below filter it.
+         *
+         * TR: Sekme kaç saniye görünmez kalınca boşaltılsın (discard)? Süreç kapanır, bellek gerçekten serbest kalır;
          * sekmeye tıklayınca sayfa yeniden yüklenir (kaydırma/form verisi geri gelir, canlı durum kaybolabilir).
          * 0 = boşaltma kapalı. Boşaltılan sekmenin zinciri biter; tekrar açılınca sıfırdan başlar.
          * TETİKLEYEN: [4] sekme kırpmadan sonra da sekmenin görünmez kalması. Aşağıdaki DISCARD_* kuralları süzer.
          */
-        DISCARD_AFTER_SECONDS: 900,
+        DISCARD_AFTER_SECONDS: 1800,
 
-        /** true: Sabitlenmiş sekmeler asla boşaltılmaz (uyku/kırpma yine uygulanır). */
+        /**
+         * EN: true: Pinned tabs are never discarded (sleep/trim still apply).
+         *
+         * TR: true: Sabitlenmiş sekmeler asla boşaltılmaz (uyku/kırpma yine uygulanır).
+         */
         DISCARD_SKIP_PINNED: true,
 
-        /** true: Yalnızca http/https sekmeler boşaltılır (about:, uzantı, dosya sayfalarına dokunulmaz). */
+        /**
+         * EN: true: Only http/https tabs are discarded (about:, extension and file pages are left alone).
+         *
+         * TR: true: Yalnızca http/https sekmeler boşaltılır (about:, uzantı, dosya sayfalarına dokunulmaz).
+         */
         DISCARD_ONLY_HTTP: true,
 
         /**
-         * true: Süreci görünür/medya/yükleniyor bir sekmeyle paylaşılan sekme boşaltılmaz. Boşaltmak o süreci kapatmaz
+         * EN: true: A tab whose process is shared with a visible/media/loading tab is not discarded. Discarding does
+         * not close that process (no memory gained) but makes the tab reload for nothing. This is the "does not
+         * harm the process" rule.
+         *
+         * TR: true: Süreci görünür/medya/yükleniyor bir sekmeyle paylaşılan sekme boşaltılmaz. Boşaltmak o süreci kapatmaz
          * (bellek kazanılmaz) ama sekmeyi boşuna yeniden yükletir. "Sürece zarar vermeyen" kuralı budur.
          */
         DISCARD_SKIP_SHARED_PROCESS: true,
 
         /**
-         * Bu sitelerin sekmeleri HİÇ boşaltılmaz (alt alan adları dahil). Yarım kalmış yazı, sohbet, toplantı, canlı
+         * EN: Tabs of these sites are NEVER discarded (subdomains included). Sites whose content must not be lost,
+         * such as half-written text, chat, meetings, live streams. (Sleep/trim still apply to them.)
+         *
+         * TR: Bu sitelerin sekmeleri HİÇ boşaltılmaz (alt alan adları dahil). Yarım kalmış yazı, sohbet, toplantı, canlı
          * akış gibi içeriği kaybolmaması gereken siteler. (Uyku/kırpma bunlara yine uygulanır.)
          */
         DISCARD_EXEMPT_HOSTS: [
@@ -205,15 +347,26 @@
             'netflix.com', 'youtube.com', 'spotify.com', 'docs.google.com'
         ],
 
-        /** true: HİÇBİR sekmeyi boşaltmaz, yalnızca "boşaltırdım" diye günlüğe yazar (deneme için). */
+        /**
+         * EN: true: Discards NO tab, only writes "would discard" to the log (for testing).
+         *
+         * TR: true: HİÇBİR sekmeyi boşaltmaz, yalnızca "boşaltırdım" diye günlüğe yazar (deneme için).
+         */
         DRY_RUN_DISCARD: false,
 
         // ==================================================================
+        // 6) GLOBAL MINIMIZE - when no page is visible (window minimized / fully covered)
         // 6) GENEL KÜÇÜLTME - hiçbir sayfa görünmüyorsa (pencere küçültüldü / tamamen örtüldü)
         // ==================================================================
 
         /**
-         * true: Genel küçültme çalışır. Sıra: 1) MINIMIZE_RECLAIM_AFTER_SECONDS sonra genel GC/CC/memory (kırpma YOK),
+         * EN: true: Global minimize runs. Order: 1) global GC/CC/memory after MINIMIZE_RECLAIM_AFTER_SECONDS (NO
+         * trim), 2) tabs go to sleep and 3) deep sleep (normal timeline; in a minimized window the selected tab
+         * also counts as "left"), 4) LAST, ALL processes are trimmed. Leaving the trim for last waits for the
+         * garbage to be discarded and the tabs to stop first, so trimmed pages do not refill immediately.
+         * TRIGGERED BY: no page being visible. Everything is cancelled when the window is restored.
+         *
+         * TR: true: Genel küçültme çalışır. Sıra: 1) MINIMIZE_RECLAIM_AFTER_SECONDS sonra genel GC/CC/memory (kırpma YOK),
          * 2) sekmeler uykuya ve 3) derin uykuya geçer (normal çizelge; küçültülen pencerede seçili sekme de "ayrılmış"
          * sayılır), 4) en sonda TÜM süreçler kırpılır. Kırpmayı en sona bırakmak, önce çöpün atılmasını ve sekmelerin
          * durmasını bekler; böylece kırpılan sayfalar hemen geri dolmaz.
@@ -222,7 +375,12 @@
         MINIMIZE_TRIM_ENABLED: true,
 
         /**
-         * Hiçbir sayfa görünmez olduktan kaç saniye sonra genel bellek temizliği (GC/CC/heap-minimize) yapılsın?
+         * EN: How many seconds after no page is visible should global memory cleanup (GC/CC/heap-minimize) run? There
+         * is a short wait so that nothing is cleaned for nothing if you restore the window right away. If media is
+         * playing, only GC/CC runs in the main process (the memory-pressure notification also reaches the media
+         * tab). TRIGGERED BY: [6] minimize. TRIGGERS: the tabs' [1] sleep already starts on its own schedule.
+         *
+         * TR: Hiçbir sayfa görünmez olduktan kaç saniye sonra genel bellek temizliği (GC/CC/heap-minimize) yapılsın?
          * Pencereyi hemen geri açarsanız boşuna temizlenmesin diye küçük bir bekleme vardır. Medya çalıyorsa yalnızca
          * ana süreçte GC/CC yapılır (memory-pressure bildirimi medya sekmesine de gider).
          * TETİKLEYEN: [6] küçültme. TETİKLER: sekmelerin [1] uykusu zaten kendi çizelgesiyle başlar.
@@ -230,27 +388,50 @@
         MINIMIZE_RECLAIM_AFTER_SECONDS: 3,
 
         /**
-         * Genel kırpma, DERİN UYKU süresi dolduktan kaç saniye sonra yapılsın? (Küçültme anından itibaren toplam
+         * EN: How many seconds after the DEEP SLEEP time expires should the global trim happen? (Total time from
+         * minimize = DEEP_SLEEP_AFTER_SECONDS + this setting.) All tabs first go to sleep and enter deep sleep,
+         * then are trimmed. TRIGGERED BY: [2] deep sleep time expiring. TRIGGERS: trimming of all processes within
+         * the scope of the TRIM_* settings.
+         *
+         * TR: Genel kırpma, DERİN UYKU süresi dolduktan kaç saniye sonra yapılsın? (Küçültme anından itibaren toplam
          * süre = DEEP_SLEEP_AFTER_SECONDS + bu ayar.) Önce tüm sekmeler uyur ve derin uykuya girer, sonra kırpılır.
          * TETİKLEYEN: [2] derin uyku süresinin dolması. TETİKLER: TRIM_* ayarlarının kapsamıyla tüm süreçlerin kırpılması.
          */
         MINIMIZE_TRIM_AFTER_DEEP_SECONDS: 10,
 
         /**
-         * Boşta kalırken süreçler zamanla şişer. Kaç dakikada bir tekrar (önce genel GC/CC/memory, 4 sn sonra kırpma)
+         * EN: Processes bloat over time while idle. How often, in minutes, should it repeat (global GC/CC/memory
+         * first, trim 4 s later)? 0 = only once. TRIGGERED BY: this much time passing since the previous global
+         * trim.
+         *
+         * TR: Boşta kalırken süreçler zamanla şişer. Kaç dakikada bir tekrar (önce genel GC/CC/memory, 4 sn sonra kırpma)
          * yapılsın? 0 = yalnızca bir kez. TETİKLEYEN: bir önceki genel kırpmadan bu kadar süre geçmesi.
          */
         MINIMIZE_RETRIM_MINUTES: 3,
 
         /**
-         * true: Ses çalan bir sekme VARKEN de [3] ana süreç + GPU kırpması ve [6] genel küçültme devam eder; yalnızca
+         * EN: true: Even while an audio-playing tab EXISTS, the [3] main process + GPU trim and the [6] global
+         * minimize continue; only THAT MEDIA TAB'S PROCESS is skipped. If PiP/screen sharing is active, the GPU is
+         * skipped too (video is being processed). false: while media plays, these two steps stop completely.
+         *
+         * TR: true: Ses çalan bir sekme VARKEN de [3] ana süreç + GPU kırpması ve [6] genel küçültme devam eder; yalnızca
          * O MEDYA SEKMESİNİN SÜRECİ atlanır. PiP/ekran paylaşımı varsa GPU da atlanır (görüntü işleniyor). false: medya
          * çalarken bu iki adım tamamen durur.
          */
         TRIM_OTHERS_WHILE_MEDIA_PLAYS: true,
 
         /**
-         * Ses çalan bir sekmenin SÜRECİ de kırpılsın: Firefox her arka plana gittiğinde (pencere küçültüldü ya da
+         * EN: Should the PROCESS of an audio-playing tab be trimmed too: each time Firefox goes to the background
+         * (window minimized or fully covered, no page visible), after waiting this many seconds it is trimmed
+         * ONCE; if a page becomes visible again (you bring it to the front), the counter resets, and the next time
+         * it goes to the background it waits this long again. The default behavior was never to touch the media
+         * tab's process; but while music/video was on, memory mostly stayed in that process. Trimmed pages return
+         * to RAM immediately if needed during playback (soft fault); only the unused part stays out. 0 = off (old
+         * behavior; TRIM_MEDIA_TAB_EVERY_SECONDS does not work either). A tab with PiP/screen sharing is not
+         * touched. If audio/video stutters, set it to 0. TRIGGERED BY: an audio-playing tab + no page visible.
+         * TRIGGERS: TRIM_MEDIA_TAB_EVERY_SECONDS (repeat).
+         *
+         * TR: Ses çalan bir sekmenin SÜRECİ de kırpılsın: Firefox her arka plana gittiğinde (pencere küçültüldü ya da
          * tamamen örtüldü, hiçbir sayfa görünmüyor) bu kadar saniye bekledikten sonra BİR KEZ kırpılır; bir sayfa
          * tekrar görünürse (öne gelirseniz) sayaç sıfırlanır, sonraki arka plana gidişte yine bu kadar beklenir.
          * Varsayılan davranış medya sekmesinin sürecine hiç dokunmamaktı; ama müzik/video açıkken bellek en çok o
@@ -262,17 +443,32 @@
         TRIM_MEDIA_TAB_AFTER_HIDDEN_SECONDS: 3,
 
         /**
-         * Arka planda kalmaya devam ederken medya sekmesinin süreci bu kadar saniyede bir TEKRAR kırpılsın
+         * EN: While it keeps staying in the background, the media tab's process is trimmed AGAIN every this many
+         * seconds (as the process runs it takes pages back and bloats). 0 = no repeat, only once each time it goes
+         * to the background. When it comes to the front and goes back again, the cycle restarts: first
+         * TRIM_MEDIA_TAB_AFTER_HIDDEN_SECONDS is waited.
+         *
+         * TR: Arka planda kalmaya devam ederken medya sekmesinin süreci bu kadar saniyede bir TEKRAR kırpılsın
          * (süreç çalıştıkça sayfaları geri alıp şişer). 0 = tekrar yok, arka plana her gidişte yalnızca bir kez.
          * Öne gelip tekrar arkaya gidince döngü baştan başlar: önce TRIM_MEDIA_TAB_AFTER_HIDDEN_SECONDS beklenir.
          */
         TRIM_MEDIA_TAB_EVERY_SECONDS: 120,
 
         // ==================================================================
+        // 7) FLOW - per process class GC / CC / Minimize / Trim, ONE order, ONE queue
         // 7) AKIŞ - süreç sınıfı başına GC / CC / Minimize / Trim, TEK sıra, TEK kuyruk
         // ==================================================================
         //
-        // Her süreç bir SINIFA girer; hangi işin hangi sınıfta yapılacağı PROCESS_ACTIONS tablosundadır.
+        // EN: Every process falls into a CLASS; which job runs in which class is defined in the PROCESS_ACTIONS table.
+        //   main            Firefox's main (parent) process
+        //   tab_background  content process of only hidden, media-free, non-loading tabs (PASSIVE tab)
+        //   tab_media       process of a hidden tab playing audio / PiP / sharing screen
+        //   tab_busy        process of a tab that is loading
+        //   tab_active      process hosting the tab VISIBLE ON SCREEN (or a tab sharing a process with it) (ACTIVE tab)
+        //   gpu, rdd (media decoder), socket (network), utility (audio etc.), extension (extension process)
+        //   spare           idle content process with no tab (preallocated)
+        //   other           other processes not covered above (inference, gmplugin ...)
+        // TR: Her süreç bir SINIFA girer; hangi işin hangi sınıfta yapılacağı PROCESS_ACTIONS tablosundadır.
         //   main            Firefox'un ana (parent) süreci
         //   tab_background  yalnızca gizli, medyasız, yüklenmeyen sekmelerin içerik süreci (PASİF sekme)
         //   tab_media       ses çalan / PiP / ekran paylaşan gizli sekmenin süreci
@@ -282,9 +478,19 @@
         //   spare           sekmesi olmayan boşta içerik süreci (önceden ayrılmış)
         //   other           yukarıdakilere girmeyen diğer süreçler (inference, gmplugin ...)
         //
-        // Bir süreç birden çok sekme barındırıyorsa sınıfı en "korumalı" olandır: görünen > yüklenen > medya > gizli.
+        // EN: If a process hosts multiple tabs, its class is the most "protected" one: visible > loading > media >
+        // hidden.
+        // TR: Bir süreç birden çok sekme barındırıyorsa sınıfı en "korumalı" olandır: görünen > yüklenen > medya > gizli.
         //
-        // İşler ve nereye uygulanabilir (uygulanamayan kombinasyonlar tabloda true olsa da yok sayılır):
+        // EN: Jobs and where they apply (inapplicable combinations are ignored even if true in the table):
+        //   gc        garbage coll.     main (direct), tab_* (message to that process)          -> NONE in others
+        //   cc        cycle coll.   main (direct), tab_* (message to that process)          -> NONE in others
+        //   minimize  heap-minimize   tab_* (message to that process, targeted); all other classes only via BROADCAST
+        //   trim      working set  every class (by process id, targeted)
+        // BROADCAST: the memory-pressure notification goes to ALL processes and cannot be aimed at a single one. So a broadcast is sent only if
+        // NO currently running class has "minimize: false"; otherwise it is skipped and written to the log.
+        // Example: while media plays, tab_media.minimize=false, so the broadcast is skipped and the media process is unaffected.
+        // TR: İşler ve nereye uygulanabilir (uygulanamayan kombinasyonlar tabloda true olsa da yok sayılır):
         //   gc        çöp toplama     main (doğrudan), tab_* (o sürece mesajla)          -> diğerlerinde YOK
         //   cc        döngü toplama   main (doğrudan), tab_* (o sürece mesajla)          -> diğerlerinde YOK
         //   minimize  heap-minimize   tab_* (o sürece mesajla, hedefli); diğer tüm sınıflar yalnızca YAYIN ile
@@ -293,7 +499,14 @@
         // o anda çalışan HİÇBİR sınıf "minimize: false" değilse gönderilir; aksi halde atlanır ve günlüğe yazılır.
         // Örnek: medya çalarken tab_media.minimize=false olduğundan yayın atlanır, medya süreci etkilenmez.
         //
-        // AKIŞ: bir tetikleyici (uyku, derin uyku, sekme kırpma, genel küçültme, tekrar ...) hangi işlerin YAPILABİLECEĞİNİ
+        // EN: FLOW: a trigger (sleep, deep sleep, tab trim, global minimize, repeat ...) selects which jobs CAN be
+        // done; the order of the jobs is always determined by FLOW_ORDER. Flows run one after another in a single
+        // queue (two flows never interleave; one flow's stage does not start before the other's finishes). Each
+        // stage waits until the processes performing it confirm (or time out), a FLOW_STAGE_GAP_MS gap is left
+        // between stages, and before each stage the process classes are determined AGAIN: if the user returned to
+        // a tab, that process is left alone; if the "no page is visible" condition is broken, the global flow
+        // stops.
+        // TR: AKIŞ: bir tetikleyici (uyku, derin uyku, sekme kırpma, genel küçültme, tekrar ...) hangi işlerin YAPILABİLECEĞİNİ
         // seçer; işlerin sırasını her zaman FLOW_ORDER belirler. Akışlar tek bir kuyrukta sırayla çalışır (iki akış asla iç
         // içe geçmez, birinin aşaması bitmeden diğerininki başlamaz). Her aşama, o aşamayı yapan süreçlerden onay gelene
         // (ya da zaman aşımına) kadar beklenir, aşamalar arasında FLOW_STAGE_GAP_MS boşluk bırakılır ve her aşamadan önce
@@ -301,33 +514,71 @@
         // koşulu bozulduysa genel akış durur.
 
         /**
-         * Aşamaların sırası. Listede olmayan iş HİÇ yapılmaz (tüm sınıflarda kapalı). Örnek: ['gc','minimize','trim']
+         * EN: Order of the stages. A job not in the list is NEVER done (off in all classes). Example:
+         * ['gc','minimize','trim'] turns CC off; ['trim','gc'] trims first and then collects garbage (not
+         * recommended: trimmed pages refill with GC). Recommended order: gc -> cc -> minimize -> trim (discard
+         * garbage first, then release memory, finally leave RAM).
+         *
+         * TR: Aşamaların sırası. Listede olmayan iş HİÇ yapılmaz (tüm sınıflarda kapalı). Örnek: ['gc','minimize','trim']
          * CC'yi kapatır; ['trim','gc'] önce kırpar sonra çöp toplar (önerilmez: kırpılan sayfalar GC ile geri dolar).
          * Önerilen sıra: gc -> cc -> minimize -> trim (önce çöp at, sonra bellek serbest bırak, en son RAM'den çıkar).
          */
         FLOW_ORDER: ['gc', 'cc', 'minimize', 'trim'],
 
-        /** Aşamalar arası bekleme (ms). */
+        /**
+         * EN: Wait between stages (ms).
+         *
+         * TR: Aşamalar arası bekleme (ms).
+         */
         FLOW_STAGE_GAP_MS: 300,
 
-        /** Bir süreçten aşama onayı için en çok bekleme (ms); süreç yanıt vermezse akış bu kadar sonra devam eder. */
+        /**
+         * EN: Maximum wait (ms) for a stage acknowledgement from a process; if a process does not respond, the flow
+         * continues after this long.
+         *
+         * TR: Bir süreçten aşama onayı için en çok bekleme (ms); süreç yanıt vermezse akış bu kadar sonra devam eder.
+         */
         FLOW_ACK_TIMEOUT_MS: 4000,
 
-        /** Minimize YAYINI sonrası beklenecek süre (ms). Yayının bitiş onayı yoktur. */
+        /**
+         * EN: Time to wait (ms) after a minimize BROADCAST. A broadcast has no completion acknowledgement.
+         *
+         * TR: Minimize YAYINI sonrası beklenecek süre (ms). Yayının bitiş onayı yoktur.
+         */
         FLOW_BROADCAST_WAIT_MS: 3000,
 
-        /** true: PiP ya da ekran paylaşımı varken GPU sürecine hiçbir iş uygulanmaz (görüntü işleniyor). */
+        /**
+         * EN: true: While PiP or screen sharing is active, no job is applied to the GPU process (video is being
+         * processed).
+         *
+         * TR: true: PiP ya da ekran paylaşımı varken GPU sürecine hiçbir iş uygulanmaz (görüntü işleniyor).
+         */
         KEEP_GPU_WHILE_PIP_OR_SHARING: true,
 
         /**
-         * 0 = kapalı. > 0: Firefox kullanılırken (bir sayfa görünür), bu kadar saniyede bir AKTİF sekmenin sürecine
+         * EN: 0 = off. > 0: While Firefox is in use (a page is visible), every this many seconds the jobs enabled in
+         * PROCESS_ACTIONS.tab_active are applied to the ACTIVE tab's process in FLOW_ORDER order. The default
+         * table turns all of them off for tab_active; it only makes sense if you turn them on deliberately.
+         * Trim/GC may cause stutter while in use.
+         *
+         * TR: 0 = kapalı. > 0: Firefox kullanılırken (bir sayfa görünür), bu kadar saniyede bir AKTİF sekmenin sürecine
          * PROCESS_ACTIONS.tab_active'te açık olan işler FLOW_ORDER sırasıyla uygulanır. Varsayılan tablo tab_active için
          * hepsini kapatır; yalnızca bilerek açarsanız anlamlıdır. Kullanırken kırpma/GC takılma yapabilir.
          */
         ACTIVE_FLOW_EVERY_SECONDS: 0,
 
         /**
-         * Kullanıcı BOŞTAYKEN (pencere görünür ama fare/klavye bu kadar saniyedir hareketsiz) ana süreç ve GPU kırpılır;
+         * EN: While the USER IS IDLE (window visible but mouse/keyboard inactive for this many seconds), the main
+         * process and GPU are trimmed; 0 = off. It is done while idle, NOT at busy moments like tab switching:
+         * since there is no interaction the stutter is invisible, and when activity resumes the pages mostly
+         * return via soft fault (without reading from disk). It works only if trim is enabled for main/gpu in
+         * PROCESS_ACTIONS (trim only; GC/CC/minimize are not on this path, since a broadcast would affect the
+         * active tab too). Skipped: if audio is playing, if PiP/screen sharing exists (GPU), if the visible tab is
+         * loading. It cannot distinguish a VISIBLE video playing silently: in that case trimming the GPU may
+         * corrupt the picture; if you use it that way, turn off gpu.trim. TRIGGERED BY: the user staying idle for
+         * this many seconds (OS-level idle time).
+         *
+         * TR: Kullanıcı BOŞTAYKEN (pencere görünür ama fare/klavye bu kadar saniyedir hareketsiz) ana süreç ve GPU kırpılır;
          * 0 = kapalı. Sekme geçişi gibi meşgul anlarda DEĞİL, hareketsizken yapılır: etkileşim olmadığı için takılma görünmez ve
          * hareket gelince sayfalar çoğunlukla yumuşak hatayla (diskten okumadan) geri döner. Yalnızca PROCESS_ACTIONS'ta main/gpu
          * için trim açıksa çalışır (yalnızca kırpma; GC/CC/minimize bu yolda yok, yayın aktif sekmeyi de etkilerdi).
@@ -338,13 +589,21 @@
         ACTIVE_IDLE_SECONDS: 17,
 
         /**
-         * Boşta kalma sürerse ana süreç + GPU kaç dakikada bir TEKRAR kırpılsın? 0 = her boşta oturumunda yalnızca bir kez
+         * EN: If idleness continues, how often, in minutes, should the main process + GPU be trimmed AGAIN? 0 = only
+         * once per idle session (the session ends when activity resumes; the next idle period trims again).
+         *
+         * TR: Boşta kalma sürerse ana süreç + GPU kaç dakikada bir TEKRAR kırpılsın? 0 = her boşta oturumunda yalnızca bir kez
          * (hareket gelince oturum biter, bir sonraki boşta kalışta yeniden kırpılır).
          */
         ACTIVE_IDLE_REPEAT_MINUTES: 5,
 
         /**
-         * Sınıf -> { gc, cc, minimize, trim }. Varsayılanlar eski davranışı korur: pasif sekme süreçlerinde dört iş de açık,
+         * EN: Class -> { gc, cc, minimize, trim }. The defaults preserve the old behavior: all four jobs on for
+         * passive tab processes, only trim on the media tab (only in the background, on the TRIM_MEDIA_TAB_*
+         * timings), none on active and loading tabs; for the main process and helper processes they apply while no
+         * page is visible.
+         *
+         * TR: Sınıf -> { gc, cc, minimize, trim }. Varsayılanlar eski davranışı korur: pasif sekme süreçlerinde dört iş de açık,
          * medya sekmesinde yalnızca trim (yalnızca arka planda, TRIM_MEDIA_TAB_* zamanlarıyla), aktif ve yüklenen
          * sekmelerde hiçbiri; ana süreç ve yardımcı süreçlerde ise hiçbir sayfa görünmüyorken uygulanır.
          */
@@ -364,17 +623,28 @@
         },
 
         // ==================================================================
+        // 8) LOGGING
         // 8) GÜNLÜK
         // ==================================================================
 
-        /** true: Yaptığı işleri ve hataları chrome\memlog.txt dosyasına yazar. false: dosyaya hiçbir şey yazılmaz (hatalar yalnızca Tarayıcı Konsolu'na gider). */
+        /**
+         * EN: true: Writes the work it does and errors to chrome\memlog.txt. false: nothing is written to the file
+         * (errors go only to the Browser Console).
+         *
+         * TR: true: Yaptığı işleri ve hataları chrome\memlog.txt dosyasına yazar. false: dosyaya hiçbir şey yazılmaz (hatalar yalnızca Tarayıcı Konsolu'na gider).
+         */
         ENABLE_LOGGING: false,
 
-        /** Kaç dakikada bir günlüğe "çalışıyorum" özet satırı yazılsın? 0 = yazma. */
+        /**
+         * EN: How often, in minutes, should a "I'm running" summary line be written to the log? 0 = don't write.
+         *
+         * TR: Kaç dakikada bir günlüğe "çalışıyorum" özet satırı yazılsın? 0 = yazma.
+         */
         HEARTBEAT_MINUTES: 0
     };
 
     // ===========================================
+    // LOGGING
     // GÜNLÜK
     // ===========================================
     const TAG = 'TabLifecycle';
@@ -394,6 +664,7 @@
     const logErr = (...a) => { console.error('[' + TAG + ']', ...a); fileLog('E', a); };
 
     // ===========================================
+    // WINDOWS API (ctypes): working set trimming
     // WINDOWS API (ctypes): çalışma kümesi kırpma
     // ===========================================
     const PROCESS_SET_QUOTA = 0x0100;
@@ -430,9 +701,13 @@
     }
 
     // ===========================================
+    // CONTENT PROCESS SIDE (frame script)
     // İÇERİK SÜRECİ TARAFI (çerçeve betiği)
     // ===========================================
-    // suspendTimeouts: sayfa + alt pencerelerinin setTimeout/setInterval sayaçlarını askıya alır.
+    // EN: suspendTimeouts: suspends the setTimeout/setInterval counters of the page + its sub-windows. innerWindowId
+    // check: if the page navigates, the new document is not suspended; we must not accidentally release the old
+    // suspension.
+    // TR: suspendTimeouts: sayfa + alt pencerelerinin setTimeout/setInterval sayaçlarını askıya alır.
     // innerWindowId kontrolü: sayfa gezinirse yeni belge askıda olmaz, eski askıyı yanlışlıkla çözmeyelim.
     const FRAME_SCRIPT = `
         let frozenId = 0;
@@ -471,6 +746,7 @@
     }
 
     // ===========================================
+    // HELPERS
     // YARDIMCILAR
     // ===========================================
     function browserWindows() {
@@ -502,7 +778,11 @@
         if (tab.hasAttribute('sharing')) return 'sharing';
         return null;
     }
-    /** Sekme aktif (zincire girmez) ise nedenini döner: visible | busy | audio | pip | sharing. */
+    /**
+     * EN: If the tab is active (does not enter the chain), returns why: visible | busy | audio | pip | sharing.
+     *
+     * TR: Sekme aktif (zincire girmez) ise nedenini döner: visible | busy | audio | pip | sharing.
+     */
     function activeReason(tab) {
         const br = tab.linkedBrowser;
         if (br.docShellIsActive) return 'visible';
@@ -519,7 +799,10 @@
     }
 
     /**
-     * Tüm pencerelerin anlık görüntüsü: pid -> {active}, medya türleri, hiçbir sayfa görünüyor mu.
+     * EN: Snapshot of all windows: pid -> {active}, media kinds, whether any page is visible. Process-level jobs (GC,
+     * trim, discard) use this; if any tab of a process is active, that process is left alone.
+     *
+     * TR: Tüm pencerelerin anlık görüntüsü: pid -> {active}, medya türleri, hiçbir sayfa görünüyor mu.
      * Süreç düzeyindeki işler (GC, kırpma, boşaltma) bunu kullanır; bir sürecin herhangi bir sekmesi aktifse
      * o sürece dokunulmaz.
      */
@@ -559,11 +842,16 @@
         return { procs, mediaKinds, anyMedia, mediaWhy, anyVisible,
                  allIdle: wins > 0 && !anyVisible, windows: wins };
     }
-    // Her tick'te en fazla bir kez, yalnızca süreç düzeyinde bir karar gerekirse hesaplanır.
+    // EN: Computed at most once per tick, only if a process-level decision is needed.
+    // TR: Her tick'te en fazla bir kez, yalnızca süreç düzeyinde bir karar gerekirse hesaplanır.
     let snapCache = null;
     const snap = () => snapCache || (snapCache = snapshotAll());
 
-    /** Hafif durum (yalnızca öznitelikler): hiçbir sayfa görünüyor mu, medya var mı. Her tick çağrılır. */
+    /**
+     * EN: Light state (attributes only): whether any page is visible, whether there is media. Called every tick.
+     *
+     * TR: Hafif durum (yalnızca öznitelikler): hiçbir sayfa görünüyor mu, medya var mı. Her tick çağrılır.
+     */
     function quickState() {
         let wins = 0, anyVisible = false, anyMedia = false;
         for (const win of browserWindows()) {
@@ -584,14 +872,18 @@
     }
 
     // ===========================================
+    // FLOW ENGINE: per process class GC / CC / Minimize / Trim (details: CONFIG > 7) FLOW)
     // AKIŞ MOTORU: süreç sınıfı başına GC / CC / Minimize / Trim (ayrıntı: CONFIG > 7) AKIŞ)
     // ===========================================
     const CU = (typeof Cu !== 'undefined') ? Cu : Components.utils;
-    // İşletim sistemi düzeyinde kullanıcı boşta süresi (ms); denemeler için g.idleOverride ile değiştirilebilir
+    // EN: OS-level user idle time (ms); can be overridden with g.idleOverride for testing
+    // TR: İşletim sistemi düzeyinde kullanıcı boşta süresi (ms); denemeler için g.idleOverride ile değiştirilebilir
     const idleService = Cc['@mozilla.org/widget/useridleservice;1'].getService(Ci.nsIUserIdleService);
     const getIdleMs = () => (g.idleOverride != null ? g.idleOverride : idleService.idleTime);
 
-    // Aşama onayları: içerik süreci işi bitirince 'TabLifecycle:Ack' gönderir; mesaj sekmenin penceresine gelir.
+    // EN: Stage acknowledgements: when the content process finishes its job it sends 'TabLifecycle:Ack'; the message
+    // arrives at the tab's window.
+    // TR: Aşama onayları: içerik süreci işi bitirince 'TabLifecycle:Ack' gönderir; mesaj sekmenin penceresine gelir.
     let ackSeq = 0;
     const acks = new Map();
     window.messageManager.addMessageListener('TabLifecycle:Ack', msg => {
@@ -609,7 +901,9 @@
             catch (e) { logErr('mesaj hatası', name, e); done(); }
         });
     }
-    // Mesaj, sekmenin kendi penceresinin kayıt defteriyle beklenir (çok pencerede onay o pencereye gelir).
+    // EN: The message is awaited via the tab's own window's registry (with multiple windows the acknowledgement
+    // arrives at that window).
+    // TR: Mesaj, sekmenin kendi penceresinin kayıt defteriyle beklenir (çok pencerede onay o pencereye gelir).
     function sendWaitVia(tab, name) {
         const w = tab.ownerGlobal;
         const t = w && w.TabLifecycle;
@@ -617,7 +911,9 @@
     }
 
     const isTabClass = cls => cls.startsWith('tab_');
-    // Bir işin bir sınıfta nasıl yapılacağı: 'direct' (bu süreçte), 'message' (o sürece mesajla), 'broadcast', 'pid' ya da null (yok)
+    // EN: How a job is done in a class: 'direct' (in this process), 'message' (message to that process), 'broadcast',
+    // 'pid', or null (none)
+    // TR: Bir işin bir sınıfta nasıl yapılacağı: 'direct' (bu süreçte), 'message' (o sürece mesajla), 'broadcast', 'pid' ya da null (yok)
     function capability(cls, stage) {
         if (stage === 'trim') return 'pid';
         if (cls === 'main') return stage === 'minimize' ? 'broadcast' : 'direct';
@@ -629,7 +925,11 @@
         return !!(row && row[stage] && capability(cls, stage));
     }
 
-    /** Tüm süreçleri sınıflara ayırır (her aşamadan önce yeniden çağrılır). */
+    /**
+     * EN: Classifies all processes (called again before every stage).
+     *
+     * TR: Tüm süreçleri sınıflara ayırır (her aşamadan önce yeniden çağrılır).
+     */
     async function classify() {
         const s = snapshotAll();
         const info = await ChromeUtils.requestProcInfo();
@@ -647,7 +947,12 @@
     }
 
     /**
-     * Tek bir akışı çalıştırır. opts: { reason, stages (yapılabilecek işler; sıra FLOW_ORDER'dan gelir),
+     * EN: Runs a single flow. opts: { reason, stages (jobs that can be done; the order comes from FLOW_ORDER), pids
+     * (only these processes) | classes (only these classes), needIdle (do not run while any page is visible) }.
+     * Result: { counts, pids (processes where a job was applied), protectedPids (skipped because their class is
+     * protected) }.
+     *
+     * TR: Tek bir akışı çalıştırır. opts: { reason, stages (yapılabilecek işler; sıra FLOW_ORDER'dan gelir),
      * pids (yalnızca bu süreçler) | classes (yalnızca bu sınıflar), needIdle (hiçbir sayfa görünürken çalışma) }.
      * Sonuç: { counts, pids (iş uygulanan süreçler), protectedPids (sınıfı korunduğu için atlananlar) }.
      */
@@ -661,14 +966,17 @@
             first = false;
             const { list, snap: s } = await classify();
             const idle = quickState().allIdle;
-            // Kullanıcı-boşta akışı: her aşamadan önce hâlâ hareketsiz mi diye bak, hareket geldiyse dur
+            // EN: User-idle flow: before each stage check whether the user is still idle; stop if activity resumed
+            // TR: Kullanıcı-boşta akışı: her aşamadan önce hâlâ hareketsiz mi diye bak, hareket geldiyse dur
             const userIdle = !!o.userIdleMs && getIdleMs() >= o.userIdleMs;
             if (o.userIdleMs && !userIdle) { res.notes.push('kullanıcı hareket etti, akış durdu'); log(`AKIŞ durdu (${o.reason}): kullanıcı hareket etti, aşama: ${stage}`); break; }
             if (o.needIdle && !idle) { res.notes.push('sayfa görünür oldu, akış durdu'); log(`AKIŞ durdu (${o.reason}): bir sayfa görünür oldu, aşama: ${stage}`); break; }
             const keepGpu = CONFIG.KEEP_GPU_WHILE_PIP_OR_SHARING && (s.mediaKinds.has('pip') || s.mediaKinds.has('sharing'));
             const scoped = list.filter(t => (!o.pids || o.pids.has(t.pid)) && (!o.classes || o.classes.has(t.cls)));
             for (const t of scoped) if (t.cls === 'tab_active' || t.cls === 'tab_busy') res.protectedPids.add(t.pid);
-            // Sayfa görünürken ana/yardımcı süreçlere (sekme dışı sınıflara) dokunulmaz: kullanırken takılma olur (kullanıcı boştaysa istisna).
+            // EN: While a page is visible, the main/helper processes (non-tab classes) are left alone: it causes
+            // stutter while in use (exception: user idle).
+            // TR: Sayfa görünürken ana/yardımcı süreçlere (sekme dışı sınıflara) dokunulmaz: kullanırken takılma olur (kullanıcı boştaysa istisna).
             const targets = scoped.filter(t => actionOn(t.cls, stage) && !(t.cls === 'gpu' && keepGpu) && (idle || userIdle || isTabClass(t.cls)));
             if (!targets.length) { log(`  aşama ${stage}: hedef yok`); continue; }
             const by = {};
@@ -692,7 +1000,9 @@
                 }
                 await Promise.all(jobs);
                 if (wantBroadcast.length) {
-                    // Yayın herkese gider: minimize'ı kapalı bir sınıf çalışıyorsa gönderme (onu etkilememek için)
+                    // EN: A broadcast goes to everyone: if a class with minimize off is running, do not send it (so as
+                    // not to affect that class)
+                    // TR: Yayın herkese gider: minimize'ı kapalı bir sınıf çalışıyorsa gönderme (onu etkilememek için)
                     const blockers = [...new Set(list.filter(t => !actionOn(t.cls, 'minimize') && !(t.cls === 'gpu' && keepGpu)).map(t => t.cls))];
                     if (blockers.length) { res.notes.push('yayın atlandı'); log(`  yayın atlandı (minimize kapalı sınıf çalışıyor: ${blockers.join(', ')})`); }
                     else {
@@ -711,7 +1021,8 @@
         return res;
     }
 
-    // Akışlar tüm pencerelerde TEK kuyrukta sırayla çalışır (lider pencerenin kuyruğu).
+    // EN: Flows run in a SINGLE queue across all windows (the leader window's queue).
+    // TR: Akışlar tüm pencerelerde TEK kuyrukta sırayla çalışır (lider pencerenin kuyruğu).
     let flowChain = Promise.resolve();
     function queueFlow(o) {
         const p = flowChain.then(() => runFlow(o)).catch(e => { logErr('akış hatası', e); return { counts: {}, pids: new Set(), protectedPids: new Set(), notes: ['hata'] }; });
@@ -740,7 +1051,11 @@
         send(tab, 'Unfreeze');
         st.suspended = false;
     }
-    /** Sekme tekrar aktif oldu / boşaltıldı: her şeyi çöz ve zinciri baştan başlat. */
+    /**
+     * EN: The tab became active again / was discarded: release everything and restart the chain from the beginning.
+     *
+     * TR: Sekme tekrar aktif oldu / boşaltıldı: her şeyi çöz ve zinciri baştan başlat.
+     */
     function resetTab(tab, why) {
         const st = state.get(tab);
         if (!st) return;
@@ -758,14 +1073,19 @@
         } catch (e) { return null; }
     }
 
-    /** GC + CC + Minimize (FLOW_ORDER sırasıyla, PROCESS_ACTIONS'a göre) yalnızca bu sekmenin sürecinde. */
+    /**
+     * EN: GC + CC + Minimize (in FLOW_ORDER order, per PROCESS_ACTIONS) only in this tab's process.
+     *
+     * TR: GC + CC + Minimize (FLOW_ORDER sırasıyla, PROCESS_ACTIONS'a göre) yalnızca bu sekmenin sürecinde.
+     */
     function reclaimTab(tab, st, now, why) {
         const pid = pidOf(tab);
         if (!pid) return false;
         flow({ reason: `${why}: ${label(tab)}`, stages: ['gc', 'cc', 'minimize'], pids: new Set([pid]) }).then(r => {
-            if (!r.pids.has(pid)) return;   // süreç korumalı sınıftaydı (aktif/medya/yüklenen) ya da işler kapalı
+            if (!r.pids.has(pid)) return;   // EN: process was in a protected class (active/media/loading) or the jobs are off | TR: süreç korumalı sınıftaydı (aktif/medya/yüklenen) ya da işler kapalı
             st.reclaimedAt = Date.now();
-            // Temizlik bittikten sonra bellek ölçülür; derin uykudaki ikinci temizlik bununla kıyaslar.
+            // EN: Memory is measured after the cleanup finishes; the second cleanup in deep sleep compares against it.
+            // TR: Temizlik bittikten sonra bellek ölçülür; derin uykudaki ikinci temizlik bununla kıyaslar.
             window.setTimeout(async () => { const m = await processMemory(pid); if (m != null) st.baseMem = m; }, 3000);
         });
         return true;
@@ -787,14 +1107,15 @@
         st.deep = true;
         const http = isHttp(tab);
         if (http && !hostMatches(CONFIG.SLEEP_EXEMPT_HOSTS, hostOf(tab))) {
-            freezeTab(tab, st, now);   // uyanık anındaysa tekrar dondur
+            freezeTab(tab, st, now);   // EN: freeze again if it is at its wake moment | TR: uyanık anındaysa tekrar dondur
             st.wakeAt = 0;
         }
         log(`DERİN UYKU (${CONFIG.DEEP_SLEEP_AFTER_SECONDS}sn):`, label(tab));
         noteDeepSleep(now);
         if (!http) return;
-        // Adım 4: yalnızca bellek ilk temizlikten beri belirgin büyüdüyse
-        if (st.reclaimedAt && now - st.reclaimedAt < 10000) return;   // az önce temizlendi
+        // EN: Step 4: only if memory has grown noticeably since the first cleanup
+        // TR: Adım 4: yalnızca bellek ilk temizlikten beri belirgin büyüdüyse
+        if (st.reclaimedAt && now - st.reclaimedAt < 10000) return;   // EN: just cleaned | TR: az önce temizlendi
         const pid = pidOf(tab);
         if (CONFIG.DEEP_RECLAIM_IF_GROWN_MB > 0 && st.baseMem && pid) {
             const m = await processMemory(pid);
@@ -819,7 +1140,7 @@
             try { pid = c.currentWindowGlobal && c.currentWindowGlobal.domProcess && c.currentWindowGlobal.domProcess.osPid; } catch (e) {}
             if (pid && pid !== Services.appinfo.processID) pids.add(pid);
         }
-        st.trimmed = true;   // akış bitene kadar yeniden başlatma
+        st.trimmed = true;   // EN: do not restart until the flow ends | TR: akış bitene kadar yeniden başlatma
         flow({ reason: `sekme kırpma (${CONFIG.TAB_TRIM_AFTER_SECONDS}sn): ${label(tab)}`, stages: ['trim'], pids }).then(r => {
             if (!r.pids.size && r.protectedPids.size) {
                 st.trimmed = false;
@@ -851,7 +1172,11 @@
         else { st.discardRetryAt = now + 60000; log('Firefox boşaltmayı reddetti (kaydedilmemiş değişiklik/seçili sekme olabilir) ->', lbl); }
     }
 
-    // Ses çalan (gizli) sekmenin süreci: arka plana gidince TRIM_MEDIA_TAB_AFTER_HIDDEN_SECONDS sonra bir kez, sonra
+    // EN: Process of the audio-playing (hidden) tab: once after TRIM_MEDIA_TAB_AFTER_HIDDEN_SECONDS when it goes to
+    // the background, then once every TRIM_MEDIA_TAB_EVERY_SECONDS. pid -> last trim time; idleSince = the moment
+    // no page became visible (0 while a page is visible, i.e. the counter resets every time it comes to the
+    // front).
+    // TR: Ses çalan (gizli) sekmenin süreci: arka plana gidince TRIM_MEDIA_TAB_AFTER_HIDDEN_SECONDS sonra bir kez, sonra
     // TRIM_MEDIA_TAB_EVERY_SECONDS'ta bir. pid -> son kırpma zamanı; idleSince = hiçbir sayfa görünmez olduğu an
     // (görünür sayfa varken 0, yani her öne gelişte sayaç sıfırlanır).
     const mediaTrimAt = new Map();
@@ -867,7 +1192,7 @@
         if (!pid) return;
         const last = mediaTrimAt.get(pid) || 0;
         const every = CONFIG.TRIM_MEDIA_TAB_EVERY_SECONDS * 1000;
-        if (last >= idleSince && !(every > 0 && now - last >= every)) return;   // bu arka plan oturumunda yapıldı
+        if (last >= idleSince && !(every > 0 && now - last >= every)) return;   // EN: already done in this background session | TR: bu arka plan oturumunda yapıldı
         mediaTrimAt.set(pid, now);
         flow({ reason: 'medya sekmesi: ' + label(tab), stages: ['trim'], pids: new Set([pid]), needIdle: true });
     }
@@ -875,7 +1200,7 @@
     function processTab(tab, now) {
         const br = tab.linkedBrowser;
         let st = state.get(tab);
-        if (!br || !br.browsingContext) { if (st) state.delete(tab); return; }   // boşaltılmış sekme
+        if (!br || !br.browsingContext) { if (st) state.delete(tab); return; }   // EN: discarded tab | TR: boşaltılmış sekme
         const reason = activeReason(tab);
         if (reason) {
             if (st) resetTab(tab, `aktif: ${reason}`);
@@ -885,10 +1210,12 @@
         if (!st) { st = { hiddenSince: now }; state.set(tab, st); }
         const age = now - st.hiddenSince;
 
-        // 1-2) Uyku + o sekmenin süreci için bellek temizliği
+        // EN: 1-2) Sleep + memory cleanup for that tab's process
+        // TR: 1-2) Uyku + o sekmenin süreci için bellek temizliği
         if (!st.slept && age >= CONFIG.SLEEP_AFTER_SECONDS * 1000) sleepTab(tab, st, now);
 
-        // Uykudaki sekmeyi kısa süre uyandır / tekrar dondur (yalnızca derin uykudan önce)
+        // EN: Briefly wake / refreeze the sleeping tab (only before deep sleep)
+        // TR: Uykudaki sekmeyi kısa süre uyandır / tekrar dondur (yalnızca derin uykudan önce)
         if (st.slept && !st.deep && CONFIG.SLEEP_WAKE_INTERVAL_SECONDS > 0 && st.frozenAt) {
             if (st.wakeAt) {
                 if (now - st.wakeAt >= CONFIG.SLEEP_WAKE_DURATION_SECONDS * 1000) { st.suspended = false; freezeTab(tab, st, now); }
@@ -897,27 +1224,35 @@
             }
         }
 
-        // 3-4) Derin uyku
+        // EN: 3-4) Deep sleep
+        // TR: 3-4) Derin uyku
         if (!st.deep && age >= CONFIG.DEEP_SLEEP_AFTER_SECONDS * 1000) {
             if (!st.slept) sleepTab(tab, st, now);
             deepSleepTab(tab, st, now).catch(e => logErr('derin uyku hatası', e));
         }
 
-        // 6) Sekme süreci kırpma
+        // EN: 6) Tab process trim
+        // TR: 6) Sekme süreci kırpma
         if (CONFIG.TAB_TRIM_AFTER_SECONDS > 0 && !st.trimmed && age >= CONFIG.TAB_TRIM_AFTER_SECONDS * 1000 &&
             (!st.trimRetryAt || now >= st.trimRetryAt)) trimTab(tab, st, now);
 
-        // 7) Boşaltma
+        // EN: 7) Discard
+        // TR: 7) Boşaltma
         if (CONFIG.DISCARD_AFTER_SECONDS > 0 && age >= CONFIG.DISCARD_AFTER_SECONDS * 1000 &&
             (!st.discardRetryAt || now >= st.discardRetryAt)) discardTab(tab, st, now);
     }
 
     // ===========================================
+    // GLOBAL STEPS (leader window only): main process + GPU, global minimize
     // GLOBAL ADIMLAR (yalnızca lider pencere): ana süreç + GPU, genel küçültme
     // ===========================================
     const g = { armedAt: 0, idleTrimmedAt: 0, lastActive: 0, lastMainGpu: 0, minSince: 0, minLast: 0, minReclaimed: false, trimCount: 0, lastHeartbeat: 0 };
 
-    /** Bir sekme derin uykuya girdi: sayaç çalışmıyorsa başlat (çalışıyorsa yeniden başlatma). */
+    /**
+     * EN: A tab entered deep sleep: start the counter if it is not running (do not restart it if it is).
+     *
+     * TR: Bir sekme derin uykuya girdi: sayaç çalışmıyorsa başlat (çalışıyorsa yeniden başlatma).
+     */
     function noteDeepSleep(now) {
         const lead = browserWindows()[0];
         const t = lead && lead.TabLifecycle;
@@ -943,7 +1278,8 @@
             const q = quickState();
             const mediaOk = !q.anyMedia || CONFIG.TRIM_OTHERS_WHILE_MEDIA_PLAYS;
 
-            // 5) Derin uykudan sonra ana süreç + GPU (yalnızca bu iki sınıf, yalnızca kırpma)
+            // EN: 5) Main process + GPU after deep sleep (only these two classes, only trim)
+            // TR: 5) Derin uykudan sonra ana süreç + GPU (yalnızca bu iki sınıf, yalnızca kırpma)
             if (g.armedAt && now - g.armedAt >= CONFIG.MAIN_GPU_TRIM_AFTER_DEEP_SECONDS * 1000) {
                 g.armedAt = 0;
                 if (!q.allIdle) log('ana süreç+GPU kırpması iptal: bir sayfa görünür (kullanırken kırpılmaz)');
@@ -955,22 +1291,27 @@
                 }
             }
 
-            // Genel küçültme: hiçbir sayfa görünür değil
+            // EN: Global minimize: no page is visible
+            // TR: Genel küçültme: hiçbir sayfa görünür değil
             if (CONFIG.MINIMIZE_TRIM_ENABLED && q.allIdle && mediaOk) {
                 if (!g.minSince) { g.minSince = now; g.minLast = 0; g.minReclaimed = false; log('hiçbir sayfa görünmüyor: genel küçültme başladı'); }
                 const age = now - g.minSince;
-                // 1) hemen genel bellek temizliği (kırpma yok)
+                // EN: 1) immediate global memory cleanup (no trim)
+                // TR: 1) hemen genel bellek temizliği (kırpma yok)
                 if (!g.minReclaimed && age >= CONFIG.MINIMIZE_RECLAIM_AFTER_SECONDS * 1000) {
                     g.minReclaimed = true;
                     await flow({ reason: 'genel temizlik (küçültme)', stages: ['gc', 'cc', 'minimize'], needIdle: true });
                 }
-                // 2-3) uyku ve derin uyku sekme çizelgesinde kendiliğinden olur; 4) en sonda kırpma
+                // EN: 2-3) sleep and deep sleep happen on their own in the tab schedule; 4) trim last
+                // TR: 2-3) uyku ve derin uyku sekme çizelgesinde kendiliğinden olur; 4) en sonda kırpma
                 const trimAfter = (CONFIG.DEEP_SLEEP_AFTER_SECONDS + CONFIG.MINIMIZE_TRIM_AFTER_DEEP_SECONDS) * 1000;
                 const due = g.minLast === 0
                     ? age >= trimAfter
                     : (CONFIG.MINIMIZE_RETRIM_MINUTES > 0 && now - g.minLast >= CONFIG.MINIMIZE_RETRIM_MINUTES * 60000);
                 if (due) {
-                    // İlk kırpmadan önce temizlik zaten yapıldı; tekrarlarda dört iş de FLOW_ORDER sırasıyla çalışır.
+                    // EN: Cleanup was already done before the first trim; on repeats all four jobs run in FLOW_ORDER
+                    // order.
+                    // TR: İlk kırpmadan önce temizlik zaten yapıldı; tekrarlarda dört iş de FLOW_ORDER sırasıyla çalışır.
                     const repeat = g.minLast !== 0;
                     g.lastMainGpu = g.minLast = now;
                     await flow({ reason: repeat ? 'genel temizlik + kırpma (boşta tekrar)' : 'genel kırpma (küçültme)',
@@ -980,16 +1321,18 @@
                 g.minSince = 0; g.minLast = 0; g.minReclaimed = false;
             }
 
-            // Aktif sekmenin süreci için isteğe bağlı periyodik akış (varsayılan kapalı)
+            // EN: Optional periodic flow for the active tab's process (off by default)
+            // TR: Aktif sekmenin süreci için isteğe bağlı periyodik akış (varsayılan kapalı)
             if (CONFIG.ACTIVE_FLOW_EVERY_SECONDS > 0 && !q.allIdle && now - g.lastActive >= CONFIG.ACTIVE_FLOW_EVERY_SECONDS * 1000) {
                 g.lastActive = now;
                 await flow({ reason: 'aktif sekme süreci', stages: CONFIG.FLOW_ORDER, classes: new Set(['tab_active']) });
             }
 
-            // Kullanıcı boşta (pencere görünür, hareketsiz): ana süreç + GPU kırpılır
+            // EN: User idle (window visible, inactive): main process + GPU are trimmed
+            // TR: Kullanıcı boşta (pencere görünür, hareketsiz): ana süreç + GPU kırpılır
             if (CONFIG.ACTIVE_IDLE_SECONDS > 0 && !q.allIdle) {
                 const need = CONFIG.ACTIVE_IDLE_SECONDS * 1000;
-                if (getIdleMs() < need) g.idleTrimmedAt = 0;   // kullanıcı etkin: yeni boşta oturumu için sıfırla
+                if (getIdleMs() < need) g.idleTrimmedAt = 0;   // EN: user is active: reset for a new idle session | TR: kullanıcı etkin: yeni boşta oturumu için sıfırla
                 else if (!q.anyMedia && !anyVisibleTabBusy()) {
                     const repeat = CONFIG.ACTIVE_IDLE_REPEAT_MINUTES * 60000;
                     const due = !g.idleTrimmedAt || (repeat > 0 && now - g.idleTrimmedAt >= repeat);
@@ -1017,6 +1360,7 @@
     }
 
     // ===========================================
+    // MAIN LOOP
     // ANA DÖNGÜ
     // ===========================================
     async function tick(now = Date.now()) {
@@ -1030,13 +1374,18 @@
         return { ok: true };
     }
 
-    /** Görünür sayfa yok ve her sekme derin uykuda (ya da medya/boşaltılmış): yeni sekme işi çıkmaz, yavaş kontrol yeter. */
+    /**
+     * EN: No visible page and every tab is in deep sleep (or media/discarded): no new tab work will appear, a slow
+     * check is enough.
+     *
+     * TR: Görünür sayfa yok ve her sekme derin uykuda (ya da medya/boşaltılmış): yeni sekme işi çıkmaz, yavaş kontrol yeter.
+     */
     function isSettled() {
         if (!(CONFIG.TICK_SETTLED_SECONDS > 0) || !quickState().allIdle) return false;
         for (const win of browserWindows()) {
             for (const tab of win.gBrowser.tabs) {
                 const br = tab.linkedBrowser;
-                if (!br || !br.browsingContext) continue;   // boşaltılmış
+                if (!br || !br.browsingContext) continue;   // EN: discarded | TR: boşaltılmış
                 if (br.docShellIsActive || tab.hasAttribute('busy')) return false;
                 if (CONFIG.SKIP_ACTIVE_MEDIA_TABS && mediaKind(tab)) continue;
                 const st = win.TabLifecycle && win.TabLifecycle.state.get(tab);
@@ -1046,15 +1395,19 @@
         return true;
     }
 
-    // Sekmeye dönüldüğünde beklemeden çöz
+    // EN: Release immediately when returning to the tab, without waiting
+    // TR: Sekmeye dönüldüğünde beklemeden çöz
     function onTabSelect(e) {
         setTickRate(false);
         resetTab(e.target, 'sekmeye dönüldü');
-        // Ayrılan sekmenin süresi hemen başlasın
+        // EN: The time of the tab being left should start immediately
+        // TR: Ayrılan sekmenin süresi hemen başlasın
         const prev = e.detail && e.detail.previousTab;
         if (prev && prev.linkedBrowser && !state.get(prev)) state.set(prev, { hiddenSince: Date.now() });
     }
-    // Pencere küçültülüp geri açılınca / öne gelince beklemeden değerlendir (sekmelerin "görünür" durumu
+    // EN: When the window is minimized and restored / brought to the front, evaluate without waiting (the tabs'
+    // "visible" state is updated shortly after the window event; therefore it looks twice).
+    // TR: Pencere küçültülüp geri açılınca / öne gelince beklemeden değerlendir (sekmelerin "görünür" durumu
     // pencere olayından kısa süre sonra güncellenir; bu yüzden iki kez bakılır).
     function onWindowWake() {
         setTickRate(false);
@@ -1081,7 +1434,8 @@
         if (timer) { window.clearInterval(timer); timer = null; slow = false; }
         try { gBrowser.tabContainer.removeEventListener('TabSelect', onTabSelect); } catch (e) {}
         try { WAKE_EVENTS.forEach(ev => window.removeEventListener(ev, onWindowWake)); } catch (e) {}
-        // Pencere kapanırken uyuyan sekmeleri çöz
+        // EN: Release sleeping tabs when the window closes
+        // TR: Pencere kapanırken uyuyan sekmeleri çöz
         try { for (const tab of gBrowser.tabs) { const st = state.get(tab); if (st) unfreezeTab(tab, st); } } catch (e) {}
         try { api.lib.close(); } catch (e) {}
         fileLog('I', ['durdu (pencere kapandı)']);

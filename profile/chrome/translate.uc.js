@@ -1,6 +1,10 @@
 // ==UserScript==
 // @name           Translate (lite): DeepL / Google
-// @description    Sağ tık menüsünden "Seçili metni çevir" ve "Sayfayı çevir"; çeviri servisi (DeepL ya da Google) menüden
+// @description    Adds "Translate selection" and "Translate page" to the right-click menu; the translation service (DeepL or Google) is
+//                 switched instantly from the menu. It adds no event listeners to the page (this was behind issues such as the official
+//                 DeepL extension making pages jump on double-click); it only runs when you issue a command. An official API key is
+//                 required (about:config > extensions.translate-lite.*); without a key, the service's own website is opened.
+// @description:tr Sağ tık menüsünden "Seçili metni çevir" ve "Sayfayı çevir"; çeviri servisi (DeepL ya da Google) menüden
 //                 anında değiştirilir. Sayfaya olay dinleyicisi eklemez (resmi DeepL uzantısının çift tıkla sayfa başına
 //                 atlama gibi bozulmaları buradan geliyordu); yalnızca siz komut verince çalışır. Resmi API anahtarı gerekir
 //                 (about:config > extensions.translate-lite.*); anahtar yoksa ilgili servisin kendi web sitesi açılır.
@@ -13,7 +17,21 @@
     if (window.TranslateLite) return;
 
     // ---------------------------------------------------------------
-    // Ayarlar (about:config > extensions.translate-lite.*)
+    // EN: Settings (about:config > extensions.translate-lite.*)
+    //   provider        deepl | google (can also be changed from the right-click menu)
+    //   targetLang      target language as a DeepL code (TR, EN-US, DE, ZH-HANS ...); converted automatically for Google. The source language is automatic by default; the pickers in the result panel change the source/target for that translation only (not persistent).
+    //   deeplApiKey     DeepL API key. If it ends with ":fx" it is the free plan (api-free.deepl.com).
+    //   googleApiKey    Google Cloud Translation (Basic, v2) API key.
+    //   deeplEndpoint / googleEndpoint   if empty the official address is used; can be set by hand for testing.
+    //   maxChars        maximum number of characters sent in one page translation (quota protection). Default 40000.
+    //   autoFallback    true (default): if the selected service's quota runs out (DeepL 456, Google quota/rate limit) it switches to the other service automatically;
+    //                   the choice is changed permanently, you can revert it from the "Çeviri servisi" menu. If the other service has no key, its web route is used.
+    //   webMode         selected text when there is no key:
+    //                   auto (default) Google: the Google Translate site is opened in a hidden off-screen browser, the translation is read from the page and
+    //                   shown in our own panel (if the site blocks it or asks for verification it falls back to the visible panel); DeepL: the site is shown in a small panel
+    //                   hidden  hidden browser only (supported services) | panel  the service's site in a visible panel | tab  new tab
+    // Keys are stored in prefs.js; do NOT commit them to the repository.
+    // TR: Ayarlar (about:config > extensions.translate-lite.*)
     //   provider        deepl | google (sağ tık menüsünden de değişir)
     //   targetLang      hedef dil, DeepL kodu biçiminde (TR, EN-US, DE, ZH-HANS ...); Google için otomatik çevrilir. Kaynak dil varsayılan otomatik; sonuç panelindeki seçicilerle o çeviri için kaynak/hedef değiştirilebilir (kalıcı değil).
     //   deeplApiKey     DeepL API anahtarı. ":fx" ile bitiyorsa ücretsiz plan (api-free.deepl.com).
@@ -29,7 +47,15 @@
     // Anahtarlar prefs.js'te saklanır; depoya GÖNDERMEYİN.
     // ---------------------------------------------------------------
     // ---------------------------------------------------------------
-    // Dil algılama ayarları (bu dosyadan değiştirilir; yalnızca "Seçili metni çevir" için)
+    // EN: Language detection settings (changed in this file; only for "Translate selection")
+    //   showDetected      true: when the source language is "Otomatik" (auto), the detected language is shown as a short code ("Otomatik · EN")
+    //   autoSwapSameLang  true: if the detected language equals the target language (e.g. translating Turkish text to Turkish), the target becomes swapTarget
+    //   swapTarget        target language code to use in the case above (EN, DE, FR ...); if the detected language is that one too, nothing changes
+    //   requireConfident  true: if Firefox's detector is not sure (very short/mixed text) the detection is ignored
+    //   wordAlternatives  true: double-clicking a word in a Google result shows alternative translations of that sentence
+    //   alternativeUnit   'sentence' or 'clause': whether the double-clicked word's sentence (period) or comma-separated part is selected and replaced
+    // A language chosen by hand from the panel pickers always takes precedence over these rules.
+    // TR: Dil algılama ayarları (bu dosyadan değiştirilir; yalnızca "Seçili metni çevir" için)
     //   showDetected      true: kaynak dili "Otomatik" seçiliyken algılanan dil kısa kodla gösterilir ("Otomatik · EN")
     //   autoSwapSameLang  true: algılanan dil, hedef dille aynıysa (örn. Türkçe metni Türkçe'ye çevirmek) hedef swapTarget olur
     //   swapTarget        yukarıdaki durumda kullanılacak hedef dil kodu (EN, DE, FR ...); algılanan dil de oysa değişiklik yapılmaz
@@ -43,8 +69,8 @@
         autoSwapSameLang: true,
         swapTarget: 'EN',
         requireConfident: true,
-        wordAlternatives: true,   // Google sonucunda çift tıklayınca alternatif çeviriler (resmi olmayan uç nokta; kapatmak için false)
-        alternativeUnit: 'sentence'   // 'sentence': nokta bazlı cümle | 'clause': virgül/;/: bazlı kısım (çift tıklayınca o birim seçilir)
+        wordAlternatives: true,   // EN: double-click on a Google result shows alternative translations (unofficial endpoint; set to false to turn off) | TR: Google sonucunda çift tıklayınca alternatif çeviriler (resmi olmayan uç nokta; kapatmak için false)
+        alternativeUnit: 'sentence'   // EN: 'sentence': period-based sentence, 'clause': comma/;/: based part (that unit is selected on double-click) | TR: 'sentence': nokta bazlı cümle | 'clause': virgül/;/: bazlı kısım (çift tıklayınca o birim seçilir)
     };
 
     const PREF = 'extensions.translate-lite.';
@@ -56,11 +82,12 @@
     defaults.setStringPref('googleApiKey', '');
     defaults.setStringPref('googleEndpoint', '');
     defaults.setIntPref('maxChars', 40000);
-    defaults.setBoolPref('autoFallback', true);   // seçili servisin kotası dolarsa öbür servise otomatik geç (seçim kalıcı değişir, menüden geri alınır)
-    defaults.setStringPref('webMode', 'auto');   // anahtarsız seçili metin: auto | hidden | panel | tab (aşağıdaki açıklamaya bakın)
+    defaults.setBoolPref('autoFallback', true);   // EN: if the selected service's quota runs out, switch to the other service automatically (the choice changes permanently, revert from the menu) | TR: seçili servisin kotası dolarsa öbür servise otomatik geç (seçim kalıcı değişir, menüden geri alınır)
+    defaults.setStringPref('webMode', 'auto');   // EN: keyless selected text: auto | hidden | panel | tab (see the explanation above) | TR: anahtarsız seçili metin: auto | hidden | panel | tab (aşağıdaki açıklamaya bakın)
     const prefs = Services.prefs.getBranch(PREF);
 
-    // Önceki sürümün (extensions.deepl-lite.*) değerlerini bir kez taşı
+    // EN: Migrate the values of the previous version (extensions.deepl-lite.*) once
+    // TR: Önceki sürümün (extensions.deepl-lite.*) değerlerini bir kez taşı
     try {
         const old = Services.prefs.getBranch('extensions.deepl-lite.');
         const move = (oldName, newName) => {
@@ -70,18 +97,21 @@
     } catch (e) {}
 
     const get = k => prefs.getStringPref(k).trim();
-    // Paneldeki seçicilerle değiştirilen, yalnızca o çeviri için geçerli dil (kalıcı ayara yazılmaz; menüden yeni çeviri başlatınca sıfırlanır)
+    // EN: Language changed via the panel pickers, valid only for that translation (not written to the persistent setting; reset when a new translation is started from the menu)
+    // TR: Paneldeki seçicilerle değiştirilen, yalnızca o çeviri için geçerli dil (kalıcı ayara yazılmaz; menüden yeni çeviri başlatınca sıfırlanır)
     let srcOverride = '', tgtOverride = '';
-    let detectedLang = '', autoTgt = '';   // algılanan kaynak dil; aynı dil çıkınca otomatik seçilen hedef (SETTINGS)
-    const DEEPL_TARGET = { EN: 'EN-US', PT: 'PT-BR', ZH: 'ZH-HANS' };   // DeepL hedefte bölgesiz EN/PT/ZH kabul etmez
+    let detectedLang = '', autoTgt = '';   // EN: detected source language; target chosen automatically when the same language is detected (SETTINGS) | TR: algılanan kaynak dil; aynı dil çıkınca otomatik seçilen hedef (SETTINGS)
+    const DEEPL_TARGET = { EN: 'EN-US', PT: 'PT-BR', ZH: 'ZH-HANS' };   // EN: DeepL does not accept region-less EN/PT/ZH as a target | TR: DeepL hedefte bölgesiz EN/PT/ZH kabul etmez
     const targetLang = () => { const t = tgtOverride || autoTgt; return (t && (DEEPL_TARGET[t] || t)) || get('targetLang') || 'TR'; };
-    const sourceLang = () => srcOverride || 'auto';   // 'auto' ya da bölgesiz kod (TR, EN, ZH ...)
+    const sourceLang = () => srcOverride || 'auto';   // EN: 'auto' or a region-less code (TR, EN, ZH ...) | TR: 'auto' ya da bölgesiz kod (TR, EN, ZH ...)
     const LANGS = [['TR', 'Türkçe'], ['EN', 'İngilizce'], ['DE', 'Almanca'], ['FR', 'Fransızca'], ['ES', 'İspanyolca'], ['IT', 'İtalyanca'],
                    ['PT', 'Portekizce'], ['RU', 'Rusça'], ['AR', 'Arapça'], ['ZH', 'Çince'], ['JA', 'Japonca'], ['KO', 'Korece'],
                    ['NL', 'Felemenkçe'], ['PL', 'Lehçe'], ['UK', 'Ukraynaca']];
 
     // ---------------------------------------------------------------
-    // Çeviri servisleri. Her biri: name, hasKey(), translate(texts) -> metin listesi, chunk (istek sınırları),
+    // EN: Translation services. Each has: name, hasKey(), translate(texts) -> list of texts, chunk (request limits),
+    // webSelection(text) (keyless: the service's own site for the selected text), webPage(uri) (keyless page translation, or null)
+    // TR: Çeviri servisleri. Her biri: name, hasKey(), translate(texts) -> metin listesi, chunk (istek sınırları),
     // webSelection(text) (anahtarsız: seçili metin için servisin kendi sitesi), webPage(uri) (anahtarsız sayfa çevirisi ya da null)
     // ---------------------------------------------------------------
     class QuotaError extends Error {}
@@ -127,7 +157,8 @@
                     body: JSON.stringify({ q: texts, target: googleLang(targetLang()), ...(sourceLang() !== 'auto' && { source: googleLang(sourceLang()) }), format: 'text' })
                 });
                 if (!res.ok) {
-                    // Kota / oran sınırı: 429 ya da 403 + reason (quotaExceeded, dailyLimitExceeded, rateLimitExceeded ...)
+                    // EN: Quota / rate limit: 429, or 403 + reason (quotaExceeded, dailyLimitExceeded, rateLimitExceeded ...)
+                    // TR: Kota / oran sınırı: 429 ya da 403 + reason (quotaExceeded, dailyLimitExceeded, rateLimitExceeded ...)
                     let reason = '';
                     try { const j = await res.clone().json(); reason = JSON.stringify(j.error && (j.error.errors || j.error.status || j.error.message) || ''); } catch (e) {}
                     if (res.status === 429 || /quota|limitexceeded|resource_exhausted/i.test(reason)) throw new QuotaError('Google kotası ya da istek sınırı doldu');
@@ -138,9 +169,12 @@
             webSelection: text => 'https://translate.google.com/?sl=' + googleSrc() + '&tl=' + googleLang(targetLang()) +
                 '&text=' + encodeURIComponent(text.slice(0, 5000)) + '&op=translate',
             hasWebPage: true,
-            // Gizli web motoru: sitenin kendi sayfası URL ile (metin hazır dolu) açılır, sonuç sayfadan okunur
+            // EN: Hidden web engine: the site's own page is opened via URL (text prefilled) and the result is read from the page
+            // TR: Gizli web motoru: sitenin kendi sayfası URL ile (metin hazır dolu) açılır, sonuç sayfadan okunur
             hiddenUrl: text => 'https://translate.google.com/?sl=' + googleSrc() + '&tl=' + googleLang(targetLang()) + '&text=' + encodeURIComponent(text) + '&op=translate',
-            // Google'ın kendi web sitesi çeviri hizmeti (translate.goog): anahtarsız, ama sayfa o adreste yeniden açılır;
+            // EN: Google's own website translation service (translate.goog): keyless, but the page is reopened at that address;
+            // does not work on pages that require sign-in
+            // TR: Google'ın kendi web sitesi çeviri hizmeti (translate.goog): anahtarsız, ama sayfa o adreste yeniden açılır;
             // oturum açmış (giriş gerektiren) sayfalarda çalışmaz
             webPage(uri) {
                 if (!uri || !/^https?$/.test(uri.scheme)) return null;
@@ -151,7 +185,8 @@
             }
         }
     };
-    // DeepL hedef dil kodunu Google'ınkine çevir (EN-US -> en, ZH-HANS -> zh-CN, PT-BR -> pt)
+    // EN: Convert the DeepL target language code to Google's (EN-US -> en, ZH-HANS -> zh-CN, PT-BR -> pt)
+    // TR: DeepL hedef dil kodunu Google'ınkine çevir (EN-US -> en, ZH-HANS -> zh-CN, PT-BR -> pt)
     function googleLang(code) {
         const c = String(code || 'TR').toUpperCase();
         return { 'ZH-HANS': 'zh-CN', 'ZH-HANT': 'zh-TW', 'ZH': 'zh-CN' }[c] || c.split('-')[0].toLowerCase();
@@ -159,7 +194,8 @@
     const googleSrc = () => sourceLang() === 'auto' ? 'auto' : googleLang(sourceLang());
     const provider = () => PROVIDERS[get('provider')] || PROVIDERS.deepl;
 
-    // İstekler servisin sınırlarına uyar
+    // EN: Requests respect the service's limits
+    // TR: İstekler servisin sınırlarına uyar
     async function translateAll(texts) {
         const p = provider();
         const out = new Array(texts.length);
@@ -167,7 +203,7 @@
         while (i < texts.length) {
             let j = i, chars = 0;
             while (j < texts.length && j - i < p.chunk.count && chars + texts[j].length <= p.chunk.chars) chars += texts[j++].length;
-            if (j === i) j = i + 1;   // tek başına çok uzun metin
+            if (j === i) j = i + 1;   // EN: a single text that is too long on its own | TR: tek başına çok uzun metin
             const part = await p.translate(texts.slice(i, j));
             part.forEach((t, k) => { out[i + k] = t; });
             i = j;
@@ -176,7 +212,8 @@
     }
 
     // ---------------------------------------------------------------
-    // İçerik tarafı (çerçeve betiği): yalnızca mesajla çalışır, sayfaya hiçbir dinleyici eklemez
+    // EN: Content side (frame script): runs only on messages, adds no listeners to the page
+    // TR: İçerik tarafı (çerçeve betiği): yalnızca mesajla çalışır, sayfaya hiçbir dinleyici eklemez
     // ---------------------------------------------------------------
     const FRAME_SCRIPT = `
         let nodes = [], orig = [], pre = [], suf = [], docId = 0;
@@ -274,7 +311,8 @@
     }
 
     // ---------------------------------------------------------------
-    // Arayüz: Firefox'un panel renklerinden türeyen küçük sonuç paneli + geçici bildirim
+    // EN: UI: small result panel derived from Firefox's panel colors + transient notification
+    // TR: Arayüz: Firefox'un panel renklerinden türeyen küçük sonuç paneli + geçici bildirim
     // ---------------------------------------------------------------
     const XHTML = 'http://www.w3.org/1999/xhtml';
     const CSS = `
@@ -330,7 +368,8 @@
     }
 
     let panel = null;
-    // rect: seçimin tarayıcı alanındaki konumu (CSS px, görünür alana göre) ya da null
+    // EN: rect: position of the selection in the browser area (CSS px, relative to the visible area) or null
+    // TR: rect: seçimin tarayıcı alanındaki konumu (CSS px, görünür alana göre) ya da null
     function placePanel(rect) {
         const b = gBrowser.selectedBrowser;
         const z = b.fullZoom || 1;
@@ -338,15 +377,16 @@
         let x, y;
         if (rect) {
             x = Math.min(Math.max(8, rect.left * z), Math.max(8, b.clientWidth - W));
-            y = rect.bottom * z + GAP;                       // seçimin ALTINDA
-            if (y > b.clientHeight - 200 && rect.top * z > 220) y = Math.max(8, rect.top * z - 200 - GAP);   // altı dar: ÜSTÜNDE
+            y = rect.bottom * z + GAP;                       // EN: BELOW the selection | TR: seçimin ALTINDA
+            if (y > b.clientHeight - 200 && rect.top * z > 220) y = Math.max(8, rect.top * z - 200 - GAP);   // EN: little room below: ABOVE it | TR: altı dar: ÜSTÜNDE
         } else {
             x = Math.max(20, (b.clientWidth - W) / 2); y = 40;
         }
         return { b, x, y };
     }
 
-    // Gömülü web panelinde gizlenen üst alanlar (en iyi çaba: servislerin sayfa yapısı değişirse görünür kalabilir)
+    // EN: Top areas hidden in the embedded web panel (best effort: they may stay visible if the services change their page structure)
+    // TR: Gömülü web panelinde gizlenen üst alanlar (en iyi çaba: servislerin sayfa yapısı değişirse görünür kalabilir)
     const WEB_PANEL_FRAME = `
         const HIDE_CSS = 'header, [role="banner"], nav { display: none !important; }';
         const apply = () => {
@@ -384,18 +424,19 @@
         panel.setAttribute('flip', 'both');
         panel.setAttribute('class', 'panel-no-padding');
         panel.style.setProperty('--arrowpanel-padding', '0');
-        panel.addEventListener('popuphidden', () => panel.replaceChildren());   // gömülü web tarayıcısını (varsa) at
+        panel.addEventListener('popuphidden', () => panel.replaceChildren());   // EN: discard the embedded web browser (if any) | TR: gömülü web tarayıcısını (varsa) at
         document.documentElement.appendChild(panel);
     }
 
-    // Başlıktaki kaynak / hedef dil seçicileri: değişince aynı metin yeni dillerle yeniden çevrilir
+    // EN: Source / target language pickers in the header: when changed, the same text is translated again with the new languages
+    // TR: Başlıktaki kaynak / hedef dil seçicileri: değişince aynı metin yeni dillerle yeniden çevrilir
     function langPickers() {
         const mk = (isSrc) => {
             const cur = isSrc ? sourceLang() : targetLang().split('-')[0].toUpperCase();
             const sel = el('select', { className: 'tl-sel' });
             sel.setAttribute('title', isSrc ? 'Kaynak dil' : 'Hedef dil');
             const opts = (isSrc ? [['auto', detectedLang ? 'Otomatik · ' + detectedLang : 'Otomatik'], ...LANGS] : [...LANGS]);
-            if (!opts.some(o => o[0] === cur)) opts.push([cur, cur]);   // ayardaki dil listede yoksa (örn. EN-GB -> EN) göster
+            if (!opts.some(o => o[0] === cur)) opts.push([cur, cur]);   // EN: show it if the configured language is not in the list (e.g. EN-GB -> EN) | TR: ayardaki dil listede yoksa (örn. EN-GB -> EN) göster
             for (const [v, label] of opts) sel.appendChild(el('option', { value: v, textContent: label, selected: v === cur }));
             sel.addEventListener('change', () => {
                 if (isSrc) srcOverride = sel.value === 'auto' ? '' : sel.value; else tgtOverride = sel.value;
@@ -406,7 +447,11 @@
         return [mk(true), el('span', { textContent: '→', style: 'flex:0' }), mk(false)];
     }
 
-    // Alternatif çeviriler: Google'ın RESMİ OLMAYAN web uç noktası (translate.googleapis.com/translate_a/single, dt=at). Belgesiz, anahtarsız,
+    // EN: Alternative translations: Google's UNOFFICIAL web endpoint (translate.googleapis.com/translate_a/single, dt=at). Undocumented, keyless,
+    // may change or be blocked at any time; a single request is sent only when you double-click, and on error a notification is shown quietly.
+    // Alternatives are per SENTENCE, not per WORD (Google does not give them word by word): double-clicking a word shows the other
+    // translations of the sentence containing it, and clicking one replaces that sentence. The result text (and Copy) is updated.
+    // TR: Alternatif çeviriler: Google'ın RESMİ OLMAYAN web uç noktası (translate.googleapis.com/translate_a/single, dt=at). Belgesiz, anahtarsız,
     // her an değişebilir ya da engellenebilir; yalnızca siz çift tıklayınca tek istek gider, hata olursa sessizce bildirim verilir.
     // Alternatifler KELİME değil CÜMLE bazındadır (Google kelime kelime vermez): tıklanan kelimenin içinde bulunduğu cümlenin
     // diğer çevirileri çıkar, birine tıklayınca o cümle değişir. Sonuç metni (ve Kopyala) güncellenir.
@@ -423,12 +468,14 @@
         altCache.set(key, groups);
         return groups;
     }
-    // Birim: SETTINGS.alternativeUnit 'sentence' (nokta/!/? ile biten cümle) ya da 'clause' (virgül, ; ve : ile ayrılan kısım)
+    // EN: Unit: SETTINGS.alternativeUnit 'sentence' (sentence ending with a period/!/?) or 'clause' (part separated by comma, ; and :)
+    // TR: Birim: SETTINGS.alternativeUnit 'sentence' (nokta/!/? ile biten cümle) ya da 'clause' (virgül, ; ve : ile ayrılan kısım)
     const UNIT_RE = () => SETTINGS.alternativeUnit === 'clause' ? /[^.!?…,;:]+[,;:.!?…]*/g : /[^.!?…]+[.!?…]*/g;
     const unitsOf = t => [...t.matchAll(UNIT_RE())].map(m => ({ start: m.index, text: m[0] }));
     const tokens = t => new Set(t.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean));
     const sim = (a, b) => { const A = tokens(a), B = tokens(b); let n = 0; for (const w of A) if (B.has(w)) n++; return n / Math.max(1, A.size + B.size - n); };
-    // groups: Google'ın cümle başına verdiği çeviri listeleri; idx/count: birimin sırası ve toplam sayısı (sayılar tutuyorsa sıraya göre eşleşir)
+    // EN: groups: the translation lists Google gives per sentence; idx/count: the unit's index and the total count (if the counts match, they are matched by order)
+    // TR: groups: Google'ın cümle başına verdiği çeviri listeleri; idx/count: birimin sırası ve toplam sayısı (sayılar tutuyorsa sıraya göre eşleşir)
     function pickGroup(groups, segText, idx, count) {
         let group = groups.find(g => g.some(x => x.trim() === segText));
         if (!group && groups.length === 1) group = groups[0];
@@ -453,11 +500,13 @@
         const idx = segs.findIndex(x => at >= x.start && at < x.start + x.text.length);
         if (idx < 0) return;
         const segText = segs[idx].text.trim(), segStart = segs[idx].start + segs[idx].text.indexOf(segText);
-        // Birimi pencerede seç (vurgula): çift tıklanan kelime yerine tüm cümle / virgüllü kısım seçili görünür
+        // EN: Select the unit in the window (highlight): the whole sentence / comma-separated part appears selected instead of just the double-clicked word
+        // TR: Birimi pencerede seç (vurgula): çift tıklanan kelime yerine tüm cümle / virgüllü kısım seçili görünür
         try { sel.setBaseAndExtent(node, segStart, node, segStart + segText.length); } catch (e) {}
         note('Alternatifler aranıyor…');
         try {
-            // Virgül biriminde yalnızca o kısmın kaynağı gönderilir (sayılar tutuyorsa); tutmuyorsa tüm metin gönderilir, yine de en yakın kısım seçilir
+            // EN: In clause mode only the source of that part is sent (if the counts match); otherwise the whole text is sent and the closest part is still chosen
+            // TR: Virgül biriminde yalnızca o kısmın kaynağı gönderilir (sayılar tutuyorsa); tutmuyorsa tüm metin gönderilir, yine de en yakın kısım seçilir
             let groups, gIdx = idx, gCount = segs.length;
             const srcUnits = unitsOf(lastText);
             if (SETTINGS.alternativeUnit === 'clause' && srcUnits.length === segs.length) {
@@ -491,9 +540,10 @@
         head.appendChild(close);
         const alts = el('div', { className: 'tl-alts' });
         panel.replaceChildren(el('div', { className: 'tl' }, [head, body, alts]));
-        // Google sonucunda bir kelimeye çift tıklayınca o cümlenin alternatif çevirileri (resmi olmayan uç nokta, aşağıya bakın)
+        // EN: Double-clicking a word in a Google result shows alternative translations of that sentence (unofficial endpoint, see below)
+        // TR: Google sonucunda bir kelimeye çift tıklayınca o cümlenin alternatif çevirileri (resmi olmayan uç nokta, aşağıya bakın)
         if (state === 'ok' && SETTINGS.wordAlternatives && provider() === PROVIDERS.google) body.addEventListener('dblclick', () => suggest(body, alts));
-        if (rect !== undefined) lastRect = rect;   // metin gelince (undefined) önceki konum korunur
+        if (rect !== undefined) lastRect = rect;   // EN: when the text arrives (undefined) the previous position is kept | TR: metin gelince (undefined) önceki konum korunur
         const pos = placePanel(lastRect);
         if (panel.state === 'open' || panel.state === 'showing') panel.moveToAnchor(pos.b, 'overlap', pos.x, pos.y, false);
         else panel.openPopup(pos.b, 'overlap', pos.x, pos.y, false, false);
@@ -501,7 +551,11 @@
     let lastRect = null;
 
     // ---------------------------------------------------------------
-    // Gizli web motoru (yalnızca Google): ekran dışı bir tarayıcıda Google Translate SİTESİ açılır (sitenin kendi sayfası, kullanıcı
+    // EN: Hidden web engine (Google only): the Google Translate SITE is opened in an off-screen browser (the site's own page, with the user's
+    // selection, a single request each time), the resulting translation is read from the page and shown in our own panel. If a block or
+    // verification (CAPTCHA) is seen, no attempt is made to get past it: it falls back to the visible panel and the hidden engine is not used for a while.
+    // The browser is discarded when idle.
+    // TR: Gizli web motoru (yalnızca Google): ekran dışı bir tarayıcıda Google Translate SİTESİ açılır (sitenin kendi sayfası, kullanıcı
     // seçimiyle, her seferinde tek istek), çıkan çeviri sayfadan okunur ve kendi panelimizde gösterilir. Engel/doğrulama (CAPTCHA)
     // görülürse aşılmaya ÇALIŞILMAZ: görünür panele düşülür ve bir süre gizli motor kullanılmaz. Boşta kalınca tarayıcı atılır.
     // ---------------------------------------------------------------
@@ -563,18 +617,20 @@
             if (!r) { if (!reinjected) { inject(); reinjected = true; } await sleep(250); continue; }
             if (r.error) return { error: r.error };
             if (r.blocked) return { blocked: true };
-            // Önceki sayfanın sonucu okunmasın: URL'deki metin gönderdiğimizle aynı olmalı
+            // EN: So the previous page's result is not read: the text in the URL must be the same as what we sent
+            // TR: Önceki sayfanın sonucu okunmasın: URL'deki metin gönderdiğimizle aynı olmalı
             let urlText = null;
             try { urlText = new URL(r.href).searchParams.get('text'); } catch (e) {}
             if (r.ready === 'complete' && urlText === text && r.text) {
-                if (r.text === last) return { ok: true, text: last.trim() };   // iki ardışık okumada aynı: çeviri tamamlandı
+                if (r.text === last) return { ok: true, text: last.trim() };   // EN: same in two consecutive reads: translation is complete | TR: iki ardışık okumada aynı: çeviri tamamlandı
                 last = r.text;
             }
             await sleep(250);
         }
         return { error: 'Google sayfası zamanında cevap vermedi' };
     }
-    // İstekler sırayla (tek tarayıcı); boşta 30 sn sonra tarayıcı atılır
+    // EN: Requests run in order (single browser); the browser is discarded after 30 s idle
+    // TR: İstekler sırayla (tek tarayıcı); boşta 30 sn sonra tarayıcı atılır
     function hiddenQueue(p, text) {
         const run = async () => {
             try { return await hiddenTranslate(p, text); }
@@ -586,7 +642,9 @@
         return r;
     }
 
-    // Anahtarsız yol: servisin KENDİ web sitesi (DeepL / Google Translate), metin hazır dolu, küçük bir panelde gösterilir.
+    // EN: Keyless route: the service's OWN website (DeepL / Google Translate), with the text prefilled, shown in a small panel.
+    // The page content is not read or scraped; it is a window that shows the user the site as is. The browser is discarded when the panel closes.
+    // TR: Anahtarsız yol: servisin KENDİ web sitesi (DeepL / Google Translate), metin hazır dolu, küçük bir panelde gösterilir.
     // Sayfanın içeriği okunmaz ya da kazınmaz; kullanıcıya siteyi olduğu gibi gösteren bir pencere. Panel kapanınca tarayıcı atılır.
     function showWebResult(url, rect) {
         ensurePanel();
@@ -604,7 +662,11 @@
         const pos = placePanel(lastRect);
         if (panel.state === 'open' || panel.state === 'showing') panel.moveToAnchor(pos.b, 'overlap', pos.x, pos.y, false);
         else panel.openPopup(pos.b, 'overlap', pos.x, pos.y, false, false);
-        // Panelde sitenin üst kısmı (logo, menüler, giriş, çeviri türü sekmeleri) gösterilmez: yalnızca bu panelin
+        // EN: The top part of the site (logo, menus, sign-in, translation type tabs) is not shown in the panel: styling is added only to the page
+        // inside this panel; nothing changes on the service's own site or in other tabs.
+        // Delayed loading (allowDelayedLoad) did not work in this embedded browser (measured); the script is injected several times after
+        // the page loads (the script does not reapply itself): the page app may draw the header late.
+        // TR: Panelde sitenin üst kısmı (logo, menüler, giriş, çeviri türü sekmeleri) gösterilmez: yalnızca bu panelin
         // içindeki sayfaya stil eklenir; servisin kendi sitesinde ya da başka sekmelerde hiçbir şey değişmez.
         // Gecikmeli yükleme (allowDelayedLoad) bu gömülü tarayıcıda çalışmadı (ölçüldü); sayfa yüklendikten sonra
         // birkaç kez enjekte edilir (betik kendini tekrar uygulamaz): sayfa uygulaması başlığı geç çizebilir.
@@ -616,12 +678,14 @@
     }
 
     // ---------------------------------------------------------------
-    // Komutlar
+    // EN: Commands
+    // TR: Komutlar
     // ---------------------------------------------------------------
     const sysPrincipal = () => Services.scriptSecurityManager.getSystemPrincipal();
     const openTab = url => { gBrowser.selectedTab = gBrowser.addTab(url, { triggeringPrincipal: sysPrincipal() }); };
 
-    // Seçili servisin kotası dolduysa (ve ayar açıksa) öbür servise kalıcı geç; başarılıysa true
+    // EN: If the selected service's quota is exhausted (and the setting is on), permanently switch to the other service; true on success
+    // TR: Seçili servisin kotası dolduysa (ve ayar açıksa) öbür servise kalıcı geç; başarılıysa true
     function fallbackFrom(p) {
         if (!prefs.getBoolPref('autoFallback')) return false;
         const other = Object.keys(PROVIDERS).find(id => PROVIDERS[id] !== p);
@@ -632,7 +696,8 @@
 
     let lastText = '';
     let langDetector = null;
-    // Firefox'un yerleşik (yerel, çevrimdışı) dil algılayıcısı; emin değilse ya da hata olursa '' döner
+    // EN: Firefox's built-in (local, offline) language detector; returns '' if unsure or on error
+    // TR: Firefox'un yerleşik (yerel, çevrimdışı) dil algılayıcısı; emin değilse ya da hata olursa '' döner
     async function detectLang(text) {
         try {
             langDetector ??= ChromeUtils.importESModule('resource://gre/modules/translations/LanguageDetector.sys.mjs').LanguageDetector;
@@ -641,7 +706,8 @@
             return r.language.split('-')[0].toUpperCase();
         } catch (e) { return ''; }
     }
-    // keepLangs: dil seçicisinden yeniden çeviri (seçilen diller korunur); menüden yeni çeviride diller ayardakine döner
+    // EN: keepLangs: re-translation from the language picker (the chosen languages are kept); with a new translation from the menu the languages return to the settings
+    // TR: keepLangs: dil seçicisinden yeniden çeviri (seçilen diller korunur); menüden yeni çeviride diller ayardakine döner
     async function translateSelection(text, retried = false, keepLangs = false) {
         text = (text || '').trim();
         if (!text) return;
@@ -655,7 +721,8 @@
             if (SETTINGS.autoSwapSameLang && !tgtOverride && detectedLang && detectedLang === pref && swap && swap !== detectedLang) autoTgt = swap;
         }
         const p = provider();
-        // Anahtar yoksa: servisin kendi web çevirmenini seçili metin hazır dolu olarak yeni sekmede aç (anahtarsız, resmi site)
+        // EN: If there is no key: open the service's own web translator with the selected text prefilled (keyless, official site)
+        // TR: Anahtar yoksa: servisin kendi web çevirmenini seçili metin hazır dolu olarak yeni sekmede aç (anahtarsız, resmi site)
         if (!p.hasKey()) {
             const mode = get('webMode');
             if (mode === 'tab') {
@@ -665,14 +732,15 @@
             }
             const got = await ask(gBrowser.selectedBrowser, 'SelRect');
             const rect = got ? got.rect : null;
-            // Gizli web motoru: destekleyen servis (Google) ve auto/hidden kipinde; engel görülürse bir süre kullanılmaz
+            // EN: Hidden web engine: for a service that supports it (Google) and in auto/hidden mode; not used for a while if a block is seen
+            // TR: Gizli web motoru: destekleyen servis (Google) ve auto/hidden kipinde; engel görülürse bir süre kullanılmaz
             if (p.hiddenUrl && (mode === 'auto' || mode === 'hidden') && Date.now() > hiddenBlockedUntil) {
                 showResult('wait', 'Çevriliyor…', rect, true);
                 const r = await hiddenQueue(p, text.slice(0, 4000));
                 if (r.ok) { showResult('ok', r.text, undefined, true); return; }
                 if (r.blocked) { hiddenBlockedUntil = Date.now() + 10 * 60000; toast(`${p.name} doğrulama istedi: 10 dakika görünür panel kullanılacak`); }
                 else if (mode === 'hidden') { showResult('error', r.error || 'Çeviri alınamadı', undefined, true); return; }
-                showWebResult(p.webSelection(text), rect);   // görünür panele düş (kullanıcı doğrulamayı kendisi geçebilir)
+                showWebResult(p.webSelection(text), rect);   // EN: fall back to the visible panel (the user can pass the verification themselves) | TR: görünür panele düş (kullanıcı doğrulamayı kendisi geçebilir)
                 return;
             }
             showWebResult(p.webSelection(text), rect);
@@ -693,7 +761,8 @@
     async function translatePage(retried = false) {
         if (pageBusy) return;
         const p = provider();
-        // Anahtar yoksa: Google'ın web sitesi çeviri hizmeti (sayfa o adreste yeniden açılır); DeepL'in anahtarsız sayfa yolu yok
+        // EN: If there is no key: Google's website translation service (the page is reopened at that address); DeepL has no keyless page route
+        // TR: Anahtar yoksa: Google'ın web sitesi çeviri hizmeti (sayfa o adreste yeniden açılır); DeepL'in anahtarsız sayfa yolu yok
         if (!p.hasKey()) {
             const url = p.webPage(gBrowser.currentURI);
             if (url) { gBrowser.selectedBrowser.loadURI(Services.io.newURI(url), { triggeringPrincipal: sysPrincipal() }); toast(`${p.name} web çevirisi açılıyor (giriş gerektiren sayfalarda çalışmaz)`); }
@@ -732,7 +801,8 @@
     }
 
     // ---------------------------------------------------------------
-    // Sağ tık menüsü
+    // EN: Right-click menu
+    // TR: Sağ tık menüsü
     // ---------------------------------------------------------------
     const menu = document.getElementById('contentAreaContextMenu');
     const mk = (id, label, cmd) => {
@@ -747,7 +817,8 @@
     });
     const pageItem = mk('translate-lite-page', 'Sayfayı çevir', () => { srcOverride = tgtOverride = ''; translatePage(); });
     const backItem = mk('translate-lite-restore', 'Orijinal sayfayı göster', () => restorePage());
-    // "Çeviri servisi" alt menüsü: DeepL / Google (radyo), seçim anında kaydedilir
+    // EN: "Çeviri servisi" submenu: DeepL / Google (radio), the choice is saved immediately
+    // TR: "Çeviri servisi" alt menüsü: DeepL / Google (radyo), seçim anında kaydedilir
     const provMenu = document.createXULElement('menu');
     provMenu.id = 'translate-lite-provider';
     provMenu.setAttribute('label', 'Çeviri servisi');
@@ -761,9 +832,11 @@
     }
     provMenu.appendChild(provPopup);
     if (menu) {
-        // Kendi ayracımız yok: Firefox'un mevcut gruplarına eklenir (uBlock gibi başka eklentiler de kendi ayracını ekler)
+        // EN: We have no separator of our own: items are added to Firefox's existing groups (other extensions like uBlock add their own separator too)
+        // TR: Kendi ayracımız yok: Firefox'un mevcut gruplarına eklenir (uBlock gibi başka eklentiler de kendi ayracını ekler)
         const after = (id, ...nodes) => { const ref = menu.querySelector('#' + id); if (ref) { ref.after(...nodes); return true; } return false; };
-        // Dört madde yan yana, "Denetle" grubunun sonunda
+        // EN: Four items side by side, at the end of the "Denetle" (Inspect) group
+        // TR: Dört madde yan yana, "Denetle" grubunun sonunda
         if (!after('context-inspect', selItem, pageItem, backItem, provMenu)) menu.append(selItem, pageItem, backItem, provMenu);
         menu.addEventListener('popupshowing', e => {
             if (e.target !== menu) return;
@@ -771,14 +844,16 @@
             const p = provider();
             const normalPage = gcm && !gcm.onLink && !gcm.onImage && !gcm.onVideo && !gcm.onAudio && !gcm.onTextInput;
             const translated = !!gBrowser.selectedTab._translateDone;
-            // Etiketler seçili servisin adını taşır; anahtar yoksa servisin web sitesine gidileceği belli olsun
+            // EN: Labels carry the selected service's name; when there is no key, make it clear the service's website will be used
+            // TR: Etiketler seçili servisin adını taşır; anahtar yoksa servisin web sitesine gidileceği belli olsun
             selItem.setAttribute('label', `Seçili metni ${p.name} ile çevir${p.hasKey() ? '' : ' (web)'}`);
             pageItem.setAttribute('label', `Sayfayı ${p.name} ile çevir${!p.hasKey() && p.hasWebPage ? ' (web)' : ''}`);
             selItem.hidden = !(gcm && gcm.isTextSelected);
             pageItem.hidden = !normalPage || translated;
             backItem.hidden = !translated;
             provMenu.hidden = selItem.hidden && pageItem.hidden && backItem.hidden;
-            // Önce hepsinin işaretini kaldır, sonra seçileni işaretle (radyo grubu, sırayla 'false' yazılırsa seçileni de siler)
+            // EN: First clear the check mark from all, then check the selected one (radio group; writing 'false' one by one would also clear the selected one)
+            // TR: Önce hepsinin işaretini kaldır, sonra seçileni işaretle (radyo grubu, sırayla 'false' yazılırsa seçileni de siler)
             const cur = get('provider') in PROVIDERS ? get('provider') : 'deepl';
             for (const id of Object.keys(provItems)) provItems[id].removeAttribute('checked');
             provItems[cur].setAttribute('checked', 'true');

@@ -1,6 +1,7 @@
 // ==UserScript==
 // @name           Extension Toggle Manager - Optimized
-// @description    Uzantıları aç/kapatan kompakt panel: arama, sıralama, domain kuralları
+// @description    Compact panel to enable/disable extensions: search, sorting, domain rules
+// @description:tr Uzantıları aç/kapatan kompakt panel: arama, sıralama, domain kuralları
 // @author         Extension Toggle
 // @include        main
 // @startup        window.ExtensionToggleManager.init();
@@ -13,12 +14,14 @@
 
     if (window.ExtensionToggleManager) return;
 
-    // Araç çubuğu düğmesi: Firefox'un kendi Uzantılar simgesi
+    // EN: Toolbar button: Firefox's own Extensions icon
+    // TR: Araç çubuğu düğmesi: Firefox'un kendi Uzantılar simgesi
     const BTN_ICON = 'url("chrome://mozapps/skin/extensions/extension.svg")';
 
     const SORT_LABELS = ['Özel sıra', 'İsme göre', 'Duruma göre'];
 
-    // Stil: Firefox'un panel renklerinden türer (tema ve koyu mod kendiliğinden uyar)
+    // EN: Style: derived from Firefox's panel colors (theme and dark mode adapt automatically)
+    // TR: Stil: Firefox'un panel renklerinden türer (tema ve koyu mod kendiliğinden uyar)
     const STYLE_ID = 'etm-style';
     const STYLE_CSS = `
     .etm, .etm-dialog, .etm-fltoast {
@@ -135,7 +138,8 @@
         st.textContent = STYLE_CSS;
     }
 
-    // Çizgi simgeler (currentColor)
+    // EN: Line icons (currentColor)
+    // TR: Çizgi simgeler (currentColor)
     const SVG_NS = 'http://www.w3.org/2000/svg';
     const ICON_DEFS = {
         power: ['M8 1.8v5.4', 'M4.6 3.9a5.4 5.4 0 1 0 6.8 0'],
@@ -183,7 +187,8 @@
     }
 
     const H = {
-        // props özellik, attrs öznitelik olarak atanır
+        // EN: props are assigned as properties, attrs as attributes
+        // TR: props özellik, attrs öznitelik olarak atanır
         el: (doc, tag, props = {}, attrs = {}, children = []) => {
             const el = doc.createElementNS('http://www.w3.org/1999/xhtml', tag);
             Object.entries(props).forEach(([k, v]) => el[k] = v);
@@ -218,7 +223,7 @@
         customOrder: [],
         initialized: false,
         draggedIndex: null,
-        sortMode: 0,   // 0 özel sıra, 1 isme göre, 2 duruma göre
+        sortMode: 0,   // EN: 0 custom order, 1 by name, 2 by status | TR: 0 özel sıra, 1 isme göre, 2 duruma göre
 
         // INIT
         async init() {
@@ -318,7 +323,8 @@
             this.panel.openPopup(anchor, 'after_end', 0, 0, false, false);
         },
 
-        // Yerel menüler (panelin dışına taşabilir)
+        // EN: Native menus (may overflow outside the panel)
+        // TR: Yerel menüler (panelin dışına taşabilir)
         newMenu(doc, id) {
             doc.getElementById(id)?.remove();
             const menu = H.xul(doc, 'menupopup', {id});
@@ -428,7 +434,8 @@
             const grip = H.el(doc, 'span', {className: 'etm-grip'}, {title: 'Sırayı değiştirmek için sürükle'}, [gripIcon(doc)]);
             if (!canDrag) grip.style.display = 'none';
 
-            // Simge yoksa ya da yüklenemezse baş harfli renkli kutu
+            // EN: If there is no icon or it fails to load, show a colored box with the initial letter
+            // TR: Simge yoksa ya da yüklenemezse baş harfli renkli kutu
             const letter = () => {
                 let h = 0;
                 for (const ch of ext.name) h = (h * 31 + ch.charCodeAt(0)) % 360;
@@ -459,7 +466,7 @@
                 e.stopPropagation();
                 await this.openExtensionSettings(ext);
             });
-            if (!ext.isActive) settingsBtn.style.display = 'none';   // kapalı uzantının ayarına ulaşılamaz
+            if (!ext.isActive) settingsBtn.style.display = 'none';   // EN: a disabled extension's settings are unreachable | TR: kapalı uzantının ayarına ulaşılamaz
             const acts = H.el(doc, 'span', {className: 'etm-acts'}, {}, [domainBtn, settingsBtn]);
 
             const sw = H.el(doc, 'button', {className: 'etm-sw', type: 'button'}, {
@@ -544,7 +551,8 @@
 
         // EXTENSION SETTINGS
         async openExtensionSettings(ext) {
-            // Önce kendi panelimizi kapat: uzantının kendi açılır penceresi (sabitlenmiş düğme) altında kalmasın
+            // EN: Close our own panel first so the extension's popup (pinned button) isn't left underneath
+            // TR: Önce kendi panelimizi kapat: uzantının kendi açılır penceresi (sabitlenmiş düğme) altında kalmasın
             if (this.panel?.state === 'open') {
                 this.panel.hidePopup();
                 await H.wait(100);
@@ -842,7 +850,7 @@
         handleDragStart(e, index) {
             this.draggedIndex = index;
             e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData('text/plain', String(index));   // Firefox sürüklemeyi başlatmak için veri ister
+            e.dataTransfer.setData('text/plain', String(index));   // EN: Firefox requires data to start a drag | TR: Firefox sürüklemeyi başlatmak için veri ister
             e.currentTarget.classList.add('etm-dragging');
         },
 
@@ -862,7 +870,8 @@
                 const draggedId = filtered[this.draggedIndex].id;
                 const targetId = filtered[targetIndex].id;
 
-                // Özel sıra boşsa önce görünen sırayı kaydet, yoksa tek sürükleme tüm listeyi karıştırır
+                // EN: If the custom order is empty, save the visible order first, otherwise a single drag would shuffle the whole list
+                // TR: Özel sıra boşsa önce görünen sırayı kaydet, yoksa tek sürükleme tüm listeyi karıştırır
                 if (!this.customOrder.length) this.customOrder = filtered.map(x => x.id);
                 this.customOrder = this.customOrder.filter(id => id !== draggedId);
                 const targetPos = this.customOrder.indexOf(targetId);
@@ -1015,7 +1024,8 @@
             ]));
         },
 
-        // Bildirim: açık pencerenin ya da panelin içinde, yoksa altta küçük bir satır
+        // EN: Notification: inside the open window or panel, otherwise a small line at the bottom
+        // TR: Bildirim: açık pencerenin ya da panelin içinde, yoksa altta küçük bir satır
         showNotification(message) {
             const doc = Services.wm.getMostRecentWindow('navigator:browser').document;
             const target = doc.querySelector('.etm-dialog .etm-toast') ||

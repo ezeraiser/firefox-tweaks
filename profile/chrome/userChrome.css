@@ -1,4 +1,12 @@
-/* Yer imi çubuğunu pencerenin ALTINA, dikey çubuğun (kenar çubuğu/dikey sekmeler) BİTTİĞİ yerden başlatır.
+/*
+   EN: Starts the bookmarks bar at the BOTTOM of the window, from where the vertical bar (sidebar / vertical
+       tabs) ENDS. The vertical bar keeps its full height; the bookmarks bar sits only below the page area.
+       Requires toolkit.legacyUserProfileCustomizations.stylesheets = true (present in profile/user.js) and
+       bookmarks_bottom.uc.js, which measures the left/right edges of the page area (it sets the --bm-left /
+       --bm-right variables; without the script they count as 0 and the bar spans the full width). Settings:
+       --bm-h = bar height, --bm-gap = gap left below and above the bar.
+
+   TR: Yer imi çubuğunu pencerenin ALTINA, dikey çubuğun (kenar çubuğu/dikey sekmeler) BİTTİĞİ yerden başlatır.
    Dikey çubuk tam yükseklikte kalır; yer imi çubuğu yalnızca sayfa alanının altındadır.
    Gereken: toolkit.legacyUserProfileCustomizations.stylesheets = true (profile/user.js'te var) ve
    sayfa alanının sol/sağ kenarını ölçen bookmarks_bottom.uc.js (--bm-left / --bm-right
@@ -10,7 +18,11 @@
   --bm-total: calc(var(--bm-h) + 2 * var(--bm-gap));
 }
 
-/* Çubuk: sayfa alanının altında, altta ve üstte --bm-gap boşlukla. */
+/* @ft:begin bookmarks-bottom */
+/*
+   EN: Bar: below the page area, with a --bm-gap gap at the bottom and top.
+
+   TR: Çubuk: sayfa alanının altında, altta ve üstte --bm-gap boşlukla. */
 #main-window:not([inFullscreen]):not([customizing]) #PersonalToolbar:not([collapsed]) {
   position: fixed !important;
   inset: auto var(--bm-right, 0px) var(--bm-gap) var(--bm-left, 0px) !important;
@@ -22,7 +34,14 @@
   border-radius: 6px;
 }
 
-/* Tıklanabilirlik: çubuk #navigator-toolbox'ın içinde ama ekranın altında durur; araç kutusu varsayılan
+/*
+   EN: Clickability: the bar lives inside #navigator-toolbox but sits at the bottom of the screen; since the
+       toolbox is BELOW the page/sidebar layers (#browser) by default, clicks go to #browser even though the
+       bar is visible (measured: elementFromPoint -> hbox#browser). Raise the toolbox, but keep it BELOW the
+       expanded vertical bar (--browser-area-z-index-sidebar-expand-on-hover = 4): when the vertical bar
+       expands, it covers the bar.
+
+   TR: Tıklanabilirlik: çubuk #navigator-toolbox'ın içinde ama ekranın altında durur; araç kutusu varsayılan
    olarak sayfa/kenar çubuğu katmanlarının (#browser) ALTINDA olduğu için, çubuk görünür olsa da tıklamalar
    #browser'a gider (ölçüldü: elementFromPoint -> hbox#browser). Araç kutusunu üste al, ama genişlemiş dikey
    çubuğun (--browser-area-z-index-sidebar-expand-on-hover = 4) ALTINDA bırak: dikey çubuk açılınca çubuğu örter. */
@@ -30,16 +49,37 @@
   z-index: 3 !important;
 }
 
-/* Yalnızca sayfa alanı kısalır (dikey çubuk değil). Çubuk gizliyse ("yalnızca yeni sekmede") boşluk yok. */
+/*
+   EN: Only the page area gets shorter (not the vertical bar). When the bar is hidden ("only on new tab"),
+       there is no gap.
+
+   TR: Yalnızca sayfa alanı kısalır (dikey çubuk değil). Çubuk gizliyse ("yalnızca yeni sekmede") boşluk yok. */
 #main-window:not([inFullscreen]):not([customizing]):has(#PersonalToolbar:not([collapsed])) #tabbrowser-tabbox {
   margin-bottom: var(--bm-total) !important;
 }
+/* @ft:end bookmarks-bottom */
 
-/* Durum çubuğu (bağlantı URL'si) için kural YOK, bilerek: #statuspanel sayfa alanıyla aynı kutuda (stack) ve
+/*
+   EN: There is deliberately NO rule for the status bar (link URL): #statuspanel is in the same box (stack) as
+       the page area and sticks to its bottom; since #tabbrowser-tabbox is already shortened by --bm-total, it
+       appears right above the bookmarks bar on its own (measured: an extra offset pushed it from 36px to
+       72px).
+
+   TR: Durum çubuğu (bağlantı URL'si) için kural YOK, bilerek: #statuspanel sayfa alanıyla aynı kutuda (stack) ve
    alttan o alana yapışık; #tabbrowser-tabbox zaten --bm-total kadar kısaldığı için kendiliğinden yer imi çubuğunun
    hemen üstünde çıkar (ölçüldü: ek kaldırma 36px yerine 72px'e fırlatıyordu). */
 
-/* Dikey sekme şeridi: Helium gibi dar ve sıkı (geçici profilde ölçüldü; nav-bar yüksekliği 40px, değişmez).
+/*
+   EN: Vertical tab strip: narrow and tight like Helium (measured in a temporary profile; the nav-bar height
+       is 40px and does not change).
+         default: strip 50px, tab row 41px (32px box + 2*2px margin + 5px)
+         with --vt-box at 28: strip 42px, tab row 33px (measured); the current 26 gives strip 40px, row 31px
+       Collapsed strip width = --vt-box + 2 * --vt-inline ; row height = 5px + --vt-box + 2 * --vt-block. To
+       change the density, tweak only the three numbers below (e.g. set --vt-block to 1px, giving a 35px row).
+       In the expanded strip the rows are therefore also lower and narrower at the sides (as in Helium). The
+       start of the bookmarks bar adapts automatically thanks to bookmarks_bottom.uc.js.
+
+   TR: Dikey sekme şeridi: Helium gibi dar ve sıkı (geçici profilde ölçüldü; nav-bar yüksekliği 40px, değişmez).
      varsayılan : şerit 50px, sekme satırı 41px (32px kutu + 2*2px kenar boşluğu + 5px)
      --vt-box 28 : şerit 42px, sekme satırı 33px (ölçüldü); şu anki 26 -> şerit 40px, satır 31px
    Daraltılmış şerit genişliği = --vt-box + 2 * --vt-inline ; satır yüksekliği = 5px + --vt-box + 2 * --vt-block.
@@ -59,12 +99,27 @@
   --tab-collapsed-width: calc(var(--vt-box) + 2 * var(--vt-inline)) !important;
 }
 
-/* Dikey çubuğun (sekmeler + kenar çubuğu düğmeleri) ölçeği: 1 = varsayılan. Yukarıdaki --vt-* ölçüleri bu oranla birlikte küçülür.
+/*
+   EN: Scale of the vertical bar (tabs + sidebar buttons): 1 = default. The --vt-* sizes above shrink together
+       with this ratio. Since the width changes, bookmarks_bottom.uc.js re-measures the start of the bookmarks
+       bar automatically.
+
+   TR: Dikey çubuğun (sekmeler + kenar çubuğu düğmeleri) ölçeği: 1 = varsayılan. Yukarıdaki --vt-* ölçüleri bu oranla birlikte küçülür.
    Genişlik değiştiği için yer imi çubuğunun başlangıcını bookmarks_bottom.uc.js kendiliğinden yeniden ölçer. */
 :root { --vt-scale: 0.9; }
 sidebar-main { zoom: var(--vt-scale); }
 
-/* Adres çubuğu: yanlardan daralt, dikeyde biraz büyüt (araç çubuğunu büyütmeden, alt/üst boşluğu azaltarak);
+/*
+   EN: Address bar: narrowed from the sides and made slightly taller vertically (without enlarging the
+       toolbar, by reducing the top/bottom gap); a centered, short box like Helium. Everything is
+       PROPORTIONAL: no pixels. --urlbar-w is the width as a percentage of the window width (vw); its lower
+       bound is --urlbar-min-w (also a window percentage). --urlbar-base is the base bar height (28px);
+       --urlbar-extra-ratio is the ratio added to it, 0.143 -> +4px (32px), 0.07 -> +2px. The gap (Firefox's
+       4px) shrinks by half of the added height, so the toolbar height does NOT change. Firefox computes the
+       width from the space of the download/extension buttons; here we give a fixed width and center the bar
+       by splitting the space on both sides automatically. The suggestions dropdown follows the bar width.
+
+   TR: Adres çubuğu: yanlardan daralt, dikeyde biraz büyüt (araç çubuğunu büyütmeden, alt/üst boşluğu azaltarak);
    Helium gibi ortalı, kısa bir kutu. Her şey ORANTILI: piksel yok.
    --urlbar-w: genişlik, pencere genişliğinin yüzdesi (vw). Alt sınır: --urlbar-min-w (yine pencere yüzdesi).
    --urlbar-base: çubuğun taban yüksekliği (28px); --urlbar-extra-ratio: ona eklenen oran, 0.143 -> +4px (32px), 0.07 -> +2px.
@@ -91,11 +146,23 @@ sidebar-main { zoom: var(--vt-scale); }
   --urlbar-height: calc(var(--urlbar-base) + var(--urlbar-extra)) !important;
 }
 
-/* Adres çubuğu odakta değilken yalnızca ana alan adı, ortalı (urlbar_domain.uc.js #urlbar'a data-host yazar).
+/* @ft:begin urlbar-domain-only */
+/*
+   EN: When the address bar is not focused, only the main domain name is shown, centered (urlbar_domain.uc.js
+       writes data-host on #urlbar). On focus/click the real URL appears. The real text is hidden completely
+       while unfocused (opacity set to 0) and the domain is drawn on top; nothing blocks clicks
+       (pointer-events none). Without the script there is no data-host and nothing changes.
+
+   TR: Adres çubuğu odakta değilken yalnızca ana alan adı, ortalı (urlbar_domain.uc.js #urlbar'a data-host yazar).
    Odaklanınca/tıklayınca gerçek URL görünür. Gerçek metin odak yokken tamamen gizlenir (opacity: 0), üstüne alan adı çizilir;
    hiçbir şey tıklamayı engellemez (pointer-events: none). Betik yoksa data-host olmaz ve hiçbir şey değişmez. */
 #urlbar:not([focused])[data-host] #urlbar-input {
-  /* color: transparent yetmez: Firefox alt alan adını ve yolu (gemini. ... /app?hl=tr) ayrı bir "ikincil seçim"
+  /*
+     EN: Setting color to transparent is not enough: Firefox paints the subdomain and the path (gemini. ...
+         /app?hl=tr) with a separate "secondary selection" color that is not transparent, so ghost text
+         remains next to the domain. opacity hides all painting.
+
+     TR: color: transparent yetmez: Firefox alt alan adını ve yolu (gemini. ... /app?hl=tr) ayrı bir "ikincil seçim"
      rengiyle boyar ve o renk saydam olmaz, alan adının yanında hayalet metin kalır. opacity tüm boyamayı gizler. */
   opacity: 0 !important;
 }
@@ -115,29 +182,58 @@ sidebar-main { zoom: var(--vt-scale); }
   font: inherit;
   color: var(--toolbar-field-color, currentColor);
 }
+/* @ft:end urlbar-domain-only */
 
-/* Üst çubuğun ölçeği: yalnızca #nav-bar içindeki düğmeler ve adres çubuğu küçülür; sekmeler ve sayfa etkilenmez. 1 = varsayılan boyut.
+/*
+   EN: Scale of the top bar: only the buttons inside #nav-bar and the address bar shrink; tabs and the page
+       are unaffected. 1 = default size. zoom is NOT applied to the bar ITSELF: Firefox decides overflow by
+       comparing the bar's content with its own width, and on a zoomed bar these two are measured in different
+       units, so it always thought the content did not fit and pushed the extension buttons into the overflow
+       menu (measured). Since the bar height changes with the scale, the auto-hide allowance (--ah-h) is tied
+       to it as well; otherwise the strip would stay invisible.
+
+   TR: Üst çubuğun ölçeği: yalnızca #nav-bar içindeki düğmeler ve adres çubuğu küçülür; sekmeler ve sayfa etkilenmez. 1 = varsayılan boyut.
    zoom çubuğun KENDİSİNE verilmez: Firefox taşma (overflow) kararını çubuğun içeriğiyle kendi genişliğini karşılaştırarak verir,
    zoom'lu çubukta bu ikisi farklı birimde ölçüldüğünden hep "sığmıyor" sanıp uzantı düğmelerini taşma menüsüne atıyordu (ölçüldü).
    Çubuk yüksekliği ölçekle değiştiği için otomatik gizleme payı (--ah-h) da ona bağlanır; yoksa şerit görünmez kalır. */
 :root {
   --nav-scale: 0.9;
-  --ah-h: calc(36px * var(--nav-scale)); /* çubuk yüksekliği (ölçüldü: 36px, ölçekle orantılı); otomatik gizleme payı buna bağlı */
+  --ah-h: calc(36px * var(--nav-scale)); /* EN: bar height (measured 36px, proportional to the scale); the auto-hide allowance depends on it | TR: çubuk yüksekliği (ölçüldü: 36px, ölçekle orantılı); otomatik gizleme payı buna bağlı */
 }
 #nav-bar toolbarbutton, #nav-bar #urlbar { zoom: var(--nav-scale); }
 
-/* Üst çubuk (geri/ileri, adres çubuğu, uzantı düğmeleri) OTOMATİK GİZLENİR: yalnızca #nav-bar yukarı çekilip --ah-trigger kadar bir şerit
+/* @ft:begin topbar-autohide */
+/*
+   EN: The top bar (back/forward, address bar, extension buttons) AUTO-HIDES: only #nav-bar is pulled up,
+       leaving a strip of --ah-trigger height; it comes down when the mouse reaches that strip, when the
+       address bar gets focus (Ctrl+L), or while a menu/panel is open. When shown, it pushes the page down.
+       The bookmarks bar is pinned to the bottom inside #navigator-toolbox, so the toolbox is NOT touched,
+       only #nav-bar moves. To turn this off, delete this whole block. The window buttons
+       (minimize/maximize/close) and the drag area are also inside nav-bar, so while it is hidden they are
+       unreachable except through the top strip. Not applied in customization mode, fullscreen and windowed
+       (non-maximized) mode: in windowed mode the top edge is a resize area, so the strip did not reliably
+       receive the mouse; the bar always stays visible.
+
+   TR: Üst çubuk (geri/ileri, adres çubuğu, uzantı düğmeleri) OTOMATİK GİZLENİR: yalnızca #nav-bar yukarı çekilip --ah-trigger kadar bir şerit
    bırakılır; fare o şeride gelince, adres çubuğuna odaklanınca (Ctrl+L) ya da bir menü/panel açıkken aşağı iner. Açılınca sayfayı
    aşağı iter. Yer imi çubuğu #navigator-toolbox içinde alta sabitli olduğu için toolbox'a DOKUNULMAZ, yalnızca #nav-bar hareket eder.
    Kapatmak için bu bloğun tamamını silin. Pencere düğmeleri (küçült/büyüt/kapat) ve sürükleme alanı da nav-bar içinde olduğundan
    gizliyken üst şerit dışında erişilemez. Özelleştirme modu, tam ekran ve pencere (büyütülmemiş) modunda uygulanmaz:
    pencere modunda üst kenar yeniden boyutlandırma alanı olduğundan şerit fareyi güvenilir almıyordu, çubuk hep görünür kalır. */
 :root {
-  --ah-trigger: 3px;      /* gizliyken görünen ve fareyle çubuğu çağıran şerit */
+  --ah-trigger: 3px;      /* EN: strip that stays visible while hidden and summons the bar on mouse hover | TR: gizliyken görünen ve fareyle çubuğu çağıran şerit */
   --ah-speed: .14s;
-  --ah-close-delay: .6s;  /* fare çubuktan ayrıldıktan sonra gizlenmeden önce beklenen süre (açılış gecikmesiz) */
+  --ah-close-delay: .6s;  /* EN: time to wait after the mouse leaves the bar before it hides (opening has no delay) | TR: fare çubuktan ayrıldıktan sonra gizlenmeden önce beklenen süre (açılış gecikmesiz) */
 }
-/* Çubuk akışta kalır (sayfayı itmez/iter): gizliyken üst kenar boşluğu negatif olduğundan yalnızca --ah-trigger kadar şerit görünür,
+/*
+   EN: The bar stays in the flow (it does not push the page while hidden, and pushes it when shown): while
+       hidden, its top margin is negative, so only a strip of --ah-trigger height is visible and the part
+       clipped by the toolbox (overflow:clip) is hidden; on hover the margin becomes 0 and the page moves down
+       by the bar height. Toolbox z-index 3: the bookmarks rule applies only while bookmarks are visible, so
+       it is needed here in every case, otherwise the strip would stay below #browser and never receive the
+       mouse. It stays below the expanded vertical bar (4).
+
+   TR: Çubuk akışta kalır (sayfayı itmez/iter): gizliyken üst kenar boşluğu negatif olduğundan yalnızca --ah-trigger kadar şerit görünür,
    araç kutusunun (overflow:clip) kırptığı kısım gizlidir; hover'da boşluk 0 olur ve sayfa çubuk yüksekliği kadar aşağı iner.
    Araç kutusu z-index 3: yer imi kuralı yalnızca yer imleri görünürken uygulandığından burada her durumda gerekir, yoksa şerit
    #browser'ın altında kalıp fareyi hiç almaz. Genişlemiş dikey çubuğun (4) altında kalır. */
@@ -153,8 +249,15 @@ sidebar-main { zoom: var(--vt-scale); }
   margin-top: 0;
   transition-delay: 0s !important;
 }
+/* @ft:end topbar-autohide */
 
-/* Koyu temada yer imi çubuğunda tek renkli koyu simgeler (GitHub vb.) zeminde kaybolur: sekmede sayfa içeriği koyu temaya göre
+/*
+   EN: In a dark theme, single-color dark icons on the bookmarks bar (GitHub etc.) vanish into the background:
+       in a tab, page content is drawn white to suit the dark theme, while the bookmarks bar draws the same
+       SVG with the UI theme. bookmark_host_tag.uc.js writes data-bm-host (the domain name) on every bookmark
+       button; icons of the sites in the list are inverted. To add a site, add one line.
+
+   TR: Koyu temada yer imi çubuğunda tek renkli koyu simgeler (GitHub vb.) zeminde kaybolur: sekmede sayfa içeriği koyu temaya göre
    beyaz çizilir, yer imi çubuğu aynı SVG'yi arayüz temasıyla çizer. bookmark_host_tag.uc.js her yer imi düğmesine
    data-bm-host (alan adı) yazar; listedeki sitelerin simgesi ters çevrilir. Siteyi eklemek için bir satır ekle. */
 @media (prefers-color-scheme: dark) {

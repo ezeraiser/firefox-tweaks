@@ -1,6 +1,8 @@
 // ==UserScript==
 // @name           Bookmark Host Tag
-// @description    Yer imi çubuğundaki her düğmeye alan adını data-bm-host özniteliği olarak yazar. userChrome.css bunu,
+// @description    Writes the domain name as a data-bm-host attribute on every button in the bookmarks bar.
+//                 userChrome.css uses it to invert single-color icons (GitHub etc.) that look dark on a dark theme.
+// @description:tr Yer imi çubuğundaki her düğmeye alan adını data-bm-host özniteliği olarak yazar. userChrome.css bunu,
 //                 koyu temada koyu görünen tek renkli simgeleri (GitHub vb.) ters çevirmek için kullanır.
 // @include        main
 // ==/UserScript==
