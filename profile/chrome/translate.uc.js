@@ -15,7 +15,7 @@
     // ---------------------------------------------------------------
     // Ayarlar (about:config > extensions.translate-lite.*)
     //   provider        deepl | google (sağ tık menüsünden de değişir)
-    //   targetLang      hedef dil, DeepL kodu biçiminde (TR, EN-US, DE, ZH-HANS ...); Google için otomatik çevrilir. Kaynak dil hep otomatik.
+    //   targetLang      hedef dil, DeepL kodu biçiminde (TR, EN-US, DE, ZH-HANS ...); Google için otomatik çevrilir. Kaynak dil varsayılan otomatik; sonuç panelindeki seçicilerle o çeviri için kaynak/hedef değiştirilebilir (kalıcı değil).
     //   deeplApiKey     DeepL API anahtarı. ":fx" ile bitiyorsa ücretsiz plan (api-free.deepl.com).
     //   googleApiKey    Google Cloud Translation (Basic, v2) API anahtarı.
     //   deeplEndpoint / googleEndpoint   boşsa resmi adres; deneme için elle verilebilir.
@@ -28,6 +28,25 @@
     //                   hidden  yalnızca gizli tarayıcı (destekleyen servis) | panel  servisin sitesi görünür panelde | tab  yeni sekme
     // Anahtarlar prefs.js'te saklanır; depoya GÖNDERMEYİN.
     // ---------------------------------------------------------------
+    // ---------------------------------------------------------------
+    // Dil algılama ayarları (bu dosyadan değiştirilir; yalnızca "Seçili metni çevir" için)
+    //   showDetected      true: kaynak dili "Otomatik" seçiliyken algılanan dil kısa kodla gösterilir ("Otomatik · EN")
+    //   autoSwapSameLang  true: algılanan dil, hedef dille aynıysa (örn. Türkçe metni Türkçe'ye çevirmek) hedef swapTarget olur
+    //   swapTarget        yukarıdaki durumda kullanılacak hedef dil kodu (EN, DE, FR ...); algılanan dil de oysa değişiklik yapılmaz
+    //   requireConfident  true: Firefox'un algılayıcısı emin değilse (çok kısa/karışık metin) algılama yok sayılır
+    //   wordAlternatives  true: Google sonucunda bir kelimeye çift tıklayınca o cümlenin alternatif çevirileri çıkar
+    //   alternativeUnit   'sentence' ya da 'clause': çift tıklanan kelimenin cümlesi mi (nokta), virgüllü kısmı mı seçilip değiştirilsin
+    // Paneldeki seçicilerden elle seçilen dil her zaman bu kuralların önüne geçer.
+    // ---------------------------------------------------------------
+    const SETTINGS = {
+        showDetected: true,
+        autoSwapSameLang: true,
+        swapTarget: 'EN',
+        requireConfident: true,
+        wordAlternatives: true,   // Google sonucunda çift tıklayınca alternatif çeviriler (resmi olmayan uç nokta; kapatmak için false)
+        alternativeUnit: 'sentence'   // 'sentence': nokta bazlı cümle | 'clause': virgül/;/: bazlı kısım (çift tıklayınca o birim seçilir)
+    };
+
     const PREF = 'extensions.translate-lite.';
     const defaults = Services.prefs.getDefaultBranch(PREF);
     defaults.setStringPref('provider', 'deepl');
@@ -51,7 +70,15 @@
     } catch (e) {}
 
     const get = k => prefs.getStringPref(k).trim();
-    const targetLang = () => get('targetLang') || 'TR';
+    // Paneldeki seçicilerle değiştirilen, yalnızca o çeviri için geçerli dil (kalıcı ayara yazılmaz; menüden yeni çeviri başlatınca sıfırlanır)
+    let srcOverride = '', tgtOverride = '';
+    let detectedLang = '', autoTgt = '';   // algılanan kaynak dil; aynı dil çıkınca otomatik seçilen hedef (SETTINGS)
+    const DEEPL_TARGET = { EN: 'EN-US', PT: 'PT-BR', ZH: 'ZH-HANS' };   // DeepL hedefte bölgesiz EN/PT/ZH kabul etmez
+    const targetLang = () => { const t = tgtOverride || autoTgt; return (t && (DEEPL_TARGET[t] || t)) || get('targetLang') || 'TR'; };
+    const sourceLang = () => srcOverride || 'auto';   // 'auto' ya da bölgesiz kod (TR, EN, ZH ...)
+    const LANGS = [['TR', 'Türkçe'], ['EN', 'İngilizce'], ['DE', 'Almanca'], ['FR', 'Fransızca'], ['ES', 'İspanyolca'], ['IT', 'İtalyanca'],
+                   ['PT', 'Portekizce'], ['RU', 'Rusça'], ['AR', 'Arapça'], ['ZH', 'Çince'], ['JA', 'Japonca'], ['KO', 'Korece'],
+                   ['NL', 'Felemenkçe'], ['PL', 'Lehçe'], ['UK', 'Ukraynaca']];
 
     // ---------------------------------------------------------------
     // Çeviri servisleri. Her biri: name, hasKey(), translate(texts) -> metin listesi, chunk (istek sınırları),
@@ -75,13 +102,13 @@
                 const res = await fetch(base + '/v2/translate', {
                     method: 'POST',
                     headers: { 'Authorization': 'DeepL-Auth-Key ' + key, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: texts, target_lang: targetLang(), preserve_formatting: true })
+                    body: JSON.stringify({ text: texts, target_lang: targetLang(), ...(sourceLang() !== 'auto' && { source_lang: sourceLang().toUpperCase() }), preserve_formatting: true })
                 });
                 if (res.status === 456) throw new QuotaError('DeepL aylık kotası doldu');
                 if (!res.ok) throw errorFor('DeepL', res);
                 return (await res.json()).translations.map(t => t.text);
             },
-            webSelection: text => 'https://www.deepl.com/translator#auto/' + targetLang().toLowerCase() + '/' +
+            webSelection: text => 'https://www.deepl.com/translator#' + sourceLang().toLowerCase() + '/' + targetLang().toLowerCase() + '/' +
                 encodeURIComponent(text.slice(0, 1500)).replace(/%2F/g, '%5C%2F'),
             hasWebPage: false,
             webPage: () => null
@@ -97,7 +124,7 @@
                 const res = await fetch(base + '/language/translate/v2', {
                     method: 'POST',
                     headers: { 'X-Goog-Api-Key': key, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ q: texts, target: googleLang(targetLang()), format: 'text' })
+                    body: JSON.stringify({ q: texts, target: googleLang(targetLang()), ...(sourceLang() !== 'auto' && { source: googleLang(sourceLang()) }), format: 'text' })
                 });
                 if (!res.ok) {
                     // Kota / oran sınırı: 429 ya da 403 + reason (quotaExceeded, dailyLimitExceeded, rateLimitExceeded ...)
@@ -108,11 +135,11 @@
                 }
                 return (await res.json()).data.translations.map(t => t.translatedText);
             },
-            webSelection: text => 'https://translate.google.com/?sl=auto&tl=' + googleLang(targetLang()) +
+            webSelection: text => 'https://translate.google.com/?sl=' + googleSrc() + '&tl=' + googleLang(targetLang()) +
                 '&text=' + encodeURIComponent(text.slice(0, 5000)) + '&op=translate',
             hasWebPage: true,
             // Gizli web motoru: sitenin kendi sayfası URL ile (metin hazır dolu) açılır, sonuç sayfadan okunur
-            hiddenUrl: text => 'https://translate.google.com/?sl=auto&tl=' + googleLang(targetLang()) + '&text=' + encodeURIComponent(text) + '&op=translate',
+            hiddenUrl: text => 'https://translate.google.com/?sl=' + googleSrc() + '&tl=' + googleLang(targetLang()) + '&text=' + encodeURIComponent(text) + '&op=translate',
             // Google'ın kendi web sitesi çeviri hizmeti (translate.goog): anahtarsız, ama sayfa o adreste yeniden açılır;
             // oturum açmış (giriş gerektiren) sayfalarda çalışmaz
             webPage(uri) {
@@ -120,7 +147,7 @@
                 const host = uri.host.replace(/-/g, '--').replace(/\./g, '-');
                 const lang = googleLang(targetLang());
                 const sep = uri.query ? '&' : '?';
-                return `https://${host}.translate.goog${uri.filePath}${uri.query ? '?' + uri.query : ''}${sep}_x_tr_sl=auto&_x_tr_tl=${lang}&_x_tr_hl=${lang}&_x_tr_pto=wapp`;
+                return `https://${host}.translate.goog${uri.filePath}${uri.query ? '?' + uri.query : ''}${sep}_x_tr_sl=${googleSrc()}&_x_tr_tl=${lang}&_x_tr_hl=${lang}&_x_tr_pto=wapp`;
             }
         }
     };
@@ -129,6 +156,7 @@
         const c = String(code || 'TR').toUpperCase();
         return { 'ZH-HANS': 'zh-CN', 'ZH-HANT': 'zh-TW', 'ZH': 'zh-CN' }[c] || c.split('-')[0].toLowerCase();
     }
+    const googleSrc = () => sourceLang() === 'auto' ? 'auto' : googleLang(sourceLang());
     const provider = () => PROVIDERS[get('provider')] || PROVIDERS.deepl;
 
     // İstekler servisin sınırlarına uyar
@@ -258,6 +286,13 @@
     .tl-web { width: 464px; }
     .tl-head { display: flex; align-items: center; gap: 6px; color: var(--tl-muted); font-size: 11px; margin-bottom: 6px; }
     .tl-head span { flex: 1; letter-spacing: .04em; text-transform: uppercase; font-weight: 600; }
+    .tl-sel { font: inherit; font-size: 11px; color: var(--tl-fg); background: var(--tl-hover); border: 0; border-radius: 4px; padding: 2px 4px; max-width: 110px; cursor: pointer; }
+    .tl-sel option { background: var(--tl-bg); color: var(--tl-fg); }
+    .tl-alts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 8px; }
+    .tl-alts:empty { display: none; }
+    .tl-alt-note { color: var(--tl-muted); font-size: 11px; }
+    .tl-chip { font: inherit; font-size: 12px; color: var(--tl-fg); background: transparent; border: 1px solid color-mix(in srgb, var(--tl-fg) 25%, transparent); border-radius: 12px; padding: 2px 9px; cursor: pointer; text-align: left; }
+    .tl-chip:hover { background: var(--tl-hover); }
     .tl-ib { width: 24px; height: 24px; border: 0; border-radius: 4px; background: transparent; color: var(--tl-fg); cursor: pointer; display: grid; place-items: center; padding: 0; }
     .tl-ib:hover { background: var(--tl-hover); }
     .tl-ib svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
@@ -353,18 +388,111 @@
         document.documentElement.appendChild(panel);
     }
 
+    // Başlıktaki kaynak / hedef dil seçicileri: değişince aynı metin yeni dillerle yeniden çevrilir
+    function langPickers() {
+        const mk = (isSrc) => {
+            const cur = isSrc ? sourceLang() : targetLang().split('-')[0].toUpperCase();
+            const sel = el('select', { className: 'tl-sel' });
+            sel.setAttribute('title', isSrc ? 'Kaynak dil' : 'Hedef dil');
+            const opts = (isSrc ? [['auto', detectedLang ? 'Otomatik · ' + detectedLang : 'Otomatik'], ...LANGS] : [...LANGS]);
+            if (!opts.some(o => o[0] === cur)) opts.push([cur, cur]);   // ayardaki dil listede yoksa (örn. EN-GB -> EN) göster
+            for (const [v, label] of opts) sel.appendChild(el('option', { value: v, textContent: label, selected: v === cur }));
+            sel.addEventListener('change', () => {
+                if (isSrc) srcOverride = sel.value === 'auto' ? '' : sel.value; else tgtOverride = sel.value;
+                if (lastText) translateSelection(lastText, false, true);
+            });
+            return sel;
+        };
+        return [mk(true), el('span', { textContent: '→', style: 'flex:0' }), mk(false)];
+    }
+
+    // Alternatif çeviriler: Google'ın RESMİ OLMAYAN web uç noktası (translate.googleapis.com/translate_a/single, dt=at). Belgesiz, anahtarsız,
+    // her an değişebilir ya da engellenebilir; yalnızca siz çift tıklayınca tek istek gider, hata olursa sessizce bildirim verilir.
+    // Alternatifler KELİME değil CÜMLE bazındadır (Google kelime kelime vermez): tıklanan kelimenin içinde bulunduğu cümlenin
+    // diğer çevirileri çıkar, birine tıklayınca o cümle değişir. Sonuç metni (ve Kopyala) güncellenir.
+    const altCache = new Map();
+    async function googleAlternatives(src) {
+        const key = [src, googleSrc(), googleLang(targetLang())].join('|');
+        if (altCache.has(key)) return altCache.get(key);
+        const q = new URLSearchParams({ client: 'gtx', sl: googleSrc(), tl: googleLang(targetLang()), q: src.slice(0, 2000) });
+        q.append('dt', 't'); q.append('dt', 'at');
+        const res = await fetch('https://translate.googleapis.com/translate_a/single?' + q);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const j = await res.json();
+        const groups = (j[5] || []).map(e => (e[2] || []).map(a => a[0]).filter(Boolean));
+        altCache.set(key, groups);
+        return groups;
+    }
+    // Birim: SETTINGS.alternativeUnit 'sentence' (nokta/!/? ile biten cümle) ya da 'clause' (virgül, ; ve : ile ayrılan kısım)
+    const UNIT_RE = () => SETTINGS.alternativeUnit === 'clause' ? /[^.!?…,;:]+[,;:.!?…]*/g : /[^.!?…]+[.!?…]*/g;
+    const unitsOf = t => [...t.matchAll(UNIT_RE())].map(m => ({ start: m.index, text: m[0] }));
+    const tokens = t => new Set(t.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean));
+    const sim = (a, b) => { const A = tokens(a), B = tokens(b); let n = 0; for (const w of A) if (B.has(w)) n++; return n / Math.max(1, A.size + B.size - n); };
+    // groups: Google'ın cümle başına verdiği çeviri listeleri; idx/count: birimin sırası ve toplam sayısı (sayılar tutuyorsa sıraya göre eşleşir)
+    function pickGroup(groups, segText, idx, count) {
+        let group = groups.find(g => g.some(x => x.trim() === segText));
+        if (!group && groups.length === 1) group = groups[0];
+        if (!group && groups.length === count) group = groups[idx];
+        if (!group) {
+            let best = 0;
+            for (const g of groups) { const sc = Math.max(...g.map(x => sim(segText, x))); if (sc > best) { best = sc; group = g; } }
+            if (best < 0.34) group = null;
+        }
+        return group;
+    }
+    async function suggest(body, box) {
+        const sel = window.getSelection();
+        const word = sel && sel.toString().trim();
+        if (!word || !lastText) return;
+        const shown = body.textContent;
+        const node = body.firstChild;
+        const at = sel.anchorNode === node ? Math.min(sel.anchorOffset, sel.focusOffset) : shown.indexOf(word);
+        const note = text => box.replaceChildren(el('span', { className: 'tl-alt-note', textContent: text }));
+        if (at < 0) return;
+        const segs = unitsOf(shown);
+        const idx = segs.findIndex(x => at >= x.start && at < x.start + x.text.length);
+        if (idx < 0) return;
+        const segText = segs[idx].text.trim(), segStart = segs[idx].start + segs[idx].text.indexOf(segText);
+        // Birimi pencerede seç (vurgula): çift tıklanan kelime yerine tüm cümle / virgüllü kısım seçili görünür
+        try { sel.setBaseAndExtent(node, segStart, node, segStart + segText.length); } catch (e) {}
+        note('Alternatifler aranıyor…');
+        try {
+            // Virgül biriminde yalnızca o kısmın kaynağı gönderilir (sayılar tutuyorsa); tutmuyorsa tüm metin gönderilir, yine de en yakın kısım seçilir
+            let groups, gIdx = idx, gCount = segs.length;
+            const srcUnits = unitsOf(lastText);
+            if (SETTINGS.alternativeUnit === 'clause' && srcUnits.length === segs.length) {
+                groups = await googleAlternatives(srcUnits[idx].text.trim());
+                gIdx = 0; gCount = groups.length;
+            } else groups = await googleAlternatives(lastText);
+            const group = pickGroup(groups, segText, gIdx, gCount);
+            if (!group) { note('Bu kelime için alternatif bulunamadı'); return; }
+            const others = group.map(x => x.trim()).filter(x => x && x !== segText);
+            if (!others.length) { note('Bu kısım için alternatif yok'); return; }
+            box.replaceChildren(el('span', { className: 'tl-alt-note', textContent: 'Alternatifler:' }), ...others.map(alt => {
+                const b = el('button', { className: 'tl-chip', type: 'button', textContent: alt });
+                b.addEventListener('click', () => { body.textContent = shown.slice(0, segStart) + alt + shown.slice(segStart + segText.length); box.replaceChildren(); });
+                return b;
+            }));
+        } catch (e) {
+            note('Alternatifler alınamadı: ' + String(e.message || e));
+        }
+    }
+
     function showResult(state, text, rect, viaWeb) {
         ensurePanel();
         const body = el('div', { className: 'tl-body' + (state === 'error' ? ' tl-err' : state === 'wait' ? ' tl-wait' : ''), textContent: text });
         const copy = iconBtn(['M5.5 5.5h7v8h-7z', 'M3.5 10.5v-8h7'], 'Kopyala', () => {
-            Cc['@mozilla.org/widget/clipboardhelper;1'].getService(Ci.nsIClipboardHelper).copyString(text);
+            Cc['@mozilla.org/widget/clipboardhelper;1'].getService(Ci.nsIClipboardHelper).copyString(body.textContent);
             toast('Çeviri panoya kopyalandı');
         });
         const close = iconBtn(['M3.5 3.5l9 9', 'M12.5 3.5l-9 9'], 'Kapat', () => panel.hidePopup());
-        const head = el('div', { className: 'tl-head' }, [el('span', { textContent: provider().name + (viaWeb ? ' (web)' : '') + ' · otomatik → ' + targetLang() })]);
+        const head = el('div', { className: 'tl-head' }, [el('span', { textContent: provider().name + (viaWeb ? ' (web)' : '') }), ...langPickers()]);
         if (state === 'ok') head.appendChild(copy);
         head.appendChild(close);
-        panel.replaceChildren(el('div', { className: 'tl' }, [head, body]));
+        const alts = el('div', { className: 'tl-alts' });
+        panel.replaceChildren(el('div', { className: 'tl' }, [head, body, alts]));
+        // Google sonucunda bir kelimeye çift tıklayınca o cümlenin alternatif çevirileri (resmi olmayan uç nokta, aşağıya bakın)
+        if (state === 'ok' && SETTINGS.wordAlternatives && provider() === PROVIDERS.google) body.addEventListener('dblclick', () => suggest(body, alts));
         if (rect !== undefined) lastRect = rect;   // metin gelince (undefined) önceki konum korunur
         const pos = placePanel(lastRect);
         if (panel.state === 'open' || panel.state === 'showing') panel.moveToAnchor(pos.b, 'overlap', pos.x, pos.y, false);
@@ -467,7 +595,7 @@
         b.style.width = '440px'; b.style.height = '380px'; b.style.display = 'block';
         const openInTab = iconBtn(['M6.5 3.5h-3v9h9v-3', 'M8.5 3.5h4v4', 'M12.5 3.5l-5.5 5.5'], 'Sekmede aç', () => { panel.hidePopup(); openTab(url); });
         const close = iconBtn(['M3.5 3.5l9 9', 'M12.5 3.5l-9 9'], 'Kapat', () => panel.hidePopup());
-        const head = el('div', { className: 'tl-head' }, [el('span', { textContent: provider().name + ' · web çevirmeni' })]);
+        const head = el('div', { className: 'tl-head' }, [el('span', { textContent: provider().name + ' · web' }), ...langPickers()]);
         head.append(openInTab, close);
         const wrap = el('div', { className: 'tl tl-web' }, [head]);
         wrap.appendChild(b);
@@ -502,9 +630,30 @@
         return true;
     }
 
-    async function translateSelection(text, retried = false) {
+    let lastText = '';
+    let langDetector = null;
+    // Firefox'un yerleşik (yerel, çevrimdışı) dil algılayıcısı; emin değilse ya da hata olursa '' döner
+    async function detectLang(text) {
+        try {
+            langDetector ??= ChromeUtils.importESModule('resource://gre/modules/translations/LanguageDetector.sys.mjs').LanguageDetector;
+            const r = await langDetector.detectLanguage(text.slice(0, 2000));
+            if (!r || !r.language || r.language === 'und' || (SETTINGS.requireConfident && !r.confident)) return '';
+            return r.language.split('-')[0].toUpperCase();
+        } catch (e) { return ''; }
+    }
+    // keepLangs: dil seçicisinden yeniden çeviri (seçilen diller korunur); menüden yeni çeviride diller ayardakine döner
+    async function translateSelection(text, retried = false, keepLangs = false) {
         text = (text || '').trim();
         if (!text) return;
+        if (!keepLangs && !retried) srcOverride = tgtOverride = '';
+        lastText = text;
+        detectedLang = autoTgt = '';
+        if (!srcOverride && (SETTINGS.showDetected || SETTINGS.autoSwapSameLang)) {
+            detectedLang = await detectLang(text);
+            const swap = String(SETTINGS.swapTarget || '').toUpperCase();
+            const pref = (get('targetLang') || 'TR').split('-')[0].toUpperCase();
+            if (SETTINGS.autoSwapSameLang && !tgtOverride && detectedLang && detectedLang === pref && swap && swap !== detectedLang) autoTgt = swap;
+        }
         const p = provider();
         // Anahtar yoksa: servisin kendi web çevirmenini seçili metin hazır dolu olarak yeni sekmede aç (anahtarsız, resmi site)
         if (!p.hasKey()) {
@@ -535,7 +684,7 @@
             const [t] = await translateAll([text]);
             showResult('ok', t);
         } catch (e) {
-            if (e instanceof QuotaError && !retried && fallbackFrom(p)) return translateSelection(text, true);
+            if (e instanceof QuotaError && !retried && fallbackFrom(p)) return translateSelection(text, true, true);
             showResult('error', String(e.message || e));
         }
     }
@@ -596,7 +745,7 @@
         const info = window.gContextMenu && window.gContextMenu.selectionInfo;
         translateSelection(info && (info.fullText || info.text));
     });
-    const pageItem = mk('translate-lite-page', 'Sayfayı çevir', () => translatePage());
+    const pageItem = mk('translate-lite-page', 'Sayfayı çevir', () => { srcOverride = tgtOverride = ''; translatePage(); });
     const backItem = mk('translate-lite-restore', 'Orijinal sayfayı göster', () => restorePage());
     // "Çeviri servisi" alt menüsü: DeepL / Google (radyo), seçim anında kaydedilir
     const provMenu = document.createXULElement('menu');
