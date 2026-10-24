@@ -153,3 +153,12 @@ sidebar-main { zoom: var(--vt-scale); }
   margin-top: 0;
   transition-delay: 0s !important;
 }
+
+/* Koyu temada yer imi çubuğunda tek renkli koyu simgeler (GitHub vb.) zeminde kaybolur: sekmede sayfa içeriği koyu temaya göre
+   beyaz çizilir, yer imi çubuğu aynı SVG'yi arayüz temasıyla çizer. bookmark_host_tag.uc.js her yer imi düğmesine
+   data-bm-host (alan adı) yazar; listedeki sitelerin simgesi ters çevrilir. Siteyi eklemek için bir satır ekle. */
+@media (prefers-color-scheme: dark) {
+  #PlacesToolbarItems .bookmark-item:is([data-bm-host="github.com"], [data-bm-host="gist.github.com"], [data-bm-host="x.com"]) .toolbarbutton-icon {
+    filter: invert(1) hue-rotate(180deg);
+  }
+}
