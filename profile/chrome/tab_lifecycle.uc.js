@@ -69,7 +69,7 @@
          * sapma). Hafif bir iştir; değiştirmenize gerek yok.
          * TETİKLER: aşağıdaki her adımı (adımlar bu kontrolde süresi dolmuş mu diye bakılarak çalışır).
          */
-        TICK_SECONDS: 3,
+        TICK_SECONDS: 5,
 
         /**
          * Her şey yerleştiğinde (hiçbir sayfa görünür değil ve tüm sekmeler derin uykuda/medya) kontrol bu kadar saniyede bir
@@ -97,7 +97,7 @@
          * TETİKLEYEN: sekmenin görünmez olması. TETİKLER: RECLAIM_ON_SLEEP (aynı anda), SLEEP_WAKE_* (uyanma döngüsü),
          * ve süre dolunca [2 DERİN UYKU].
          */
-        SLEEP_AFTER_SECONDS: 2,
+        SLEEP_AFTER_SECONDS: 1,
 
         /**
          * true: Sekme uykuya geçince O SEKMENİN sürecinde GC + CC + heap-minimize çalışır. Sayfa içeriği silinmez,
@@ -133,7 +133,7 @@
          * TETİKLEYEN: sekmenin [1] uykudan sonra da görünmez kalması. TETİKLER: DEEP_RECLAIM_IF_GROWN_MB (ikinci
          * temizlik), [3] ana süreç + GPU sayacı (MAIN_GPU_TRIM_AFTER_DEEP_SECONDS) ve [6]'daki genel kırpma süresi.
          */
-        DEEP_SLEEP_AFTER_SECONDS: 30,
+        DEEP_SLEEP_AFTER_SECONDS: 5,
 
         /**
          * Derin uykuya geçerken ikinci bellek temizliği yalnızca, sürecin belleği ilk temizlikten (RECLAIM_ON_SLEEP)
@@ -141,7 +141,7 @@
          * sekmeye dönünce JIT kodunu soğuk bırakıp ilk anı yavaşlatır. 0 = her zaman yap.
          * TETİKLEYEN: [2] derin uyku (RECLAIM_ON_SLEEP ölçümüyle kıyaslar).
          */
-        DEEP_RECLAIM_IF_GROWN_MB: 20,
+        DEEP_RECLAIM_IF_GROWN_MB: 30,
 
         // ==================================================================
         // 3) ANA SÜREÇ + GPU KIRPMA - derin uykudan MAIN_GPU_TRIM_AFTER_DEEP_SECONDS sonra
@@ -157,7 +157,7 @@
         MAIN_GPU_TRIM_AFTER_DEEP_SECONDS: 10,
 
         /** İki ana süreç + GPU kırpması arasında en az kaç saniye geçsin? (Sık sık kırpmayı önler; [6] genel kırpma da sayılır.) */
-        MAIN_GPU_MIN_INTERVAL_SECONDS: 180,
+        MAIN_GPU_MIN_INTERVAL_SECONDS: 120,
 
         // ==================================================================
         // 4) SEKME SÜRECİ KIRPMA - sekmeden ayrıldıktan TAB_TRIM_AFTER_SECONDS sonra
