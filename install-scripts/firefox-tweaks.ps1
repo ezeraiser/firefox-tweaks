@@ -61,7 +61,7 @@ $Strings = @{
         'comp.loader' = 'Loader: config.js + config-prefs.js (Firefox folder)'
         'comp.policies' = 'Enterprise policies: policies.json (also turns off the built-in PDF viewer)'
         'comp.userjs' = 'Profile settings: user.js'
-        'comp.ui' = 'Interface: userChrome.css + bookmarks, address bar and extension manager scripts'
+        'comp.ui' = 'Interface: userChrome.css, userContent.css, ui.uc.js + extension manager script'
         'comp.lifecycle' = 'Memory: tab_lifecycle.uc.js'
         'comp.translate' = 'Translation: translate.uc.js'
         'tag.dry' = '[preview] '
@@ -80,6 +80,7 @@ $Strings = @{
         'log.mkdir' = '{0}folder created: {1}'
         'log.backup' = '{0}backed up: {1}'
         'log.copied' = '{0}copied: {1}'
+        'log.retired' = '{0}old script removed (now part of {1}): {2}'
         'log.done.install' = '{0}Installation finished. Open Firefox to see the changes (if needed: about:support > "Clear startup cache").'
         'log.skip.modified' = '{0}skipped (changed after installation): {1}'
         'log.restored' = '{0}restored from backup: {1}'
@@ -174,7 +175,7 @@ $Strings = @{
         'comp.loader' = 'Yükleyici: config.js + config-prefs.js (Firefox klasörü)'
         'comp.policies' = 'Kurumsal ilkeler: policies.json (yerleşik PDF görüntüleyiciyi de kapatır)'
         'comp.userjs' = 'Profil ayarları: user.js'
-        'comp.ui' = 'Arayüz: userChrome.css + yer imi, adres çubuğu ve uzantı yöneticisi betikleri'
+        'comp.ui' = 'Arayüz: userChrome.css, userContent.css, ui.uc.js + uzantı yöneticisi betiği'
         'comp.lifecycle' = 'Bellek: tab_lifecycle.uc.js'
         'comp.translate' = 'Çeviri: translate.uc.js'
         'tag.dry' = '[önizleme] '
@@ -198,6 +199,7 @@ $Strings = @{
         'log.restored' = '{0}yedekten geri yüklendi: {1}'
         'log.nobackup' = '{0}UYARI: yedek bulunamadı, dosya olduğu gibi bırakıldı: {1}'
         'log.deleted' = '{0}silindi: {1}'
+        'log.retired' = '{0}eski betik kaldırıldı (artık {1} içinde): {2}'
         'log.logdeleted' = '{0}günlük silindi: {1}'
         'log.dirdeleted' = '{0}boş klasör silindi: {1}'
         'log.dirkept' = '{0}klasör boş değil, bırakıldı: {1}'
@@ -293,6 +295,14 @@ function T([string]$Key, [object[]]$A) {
     return $s
 }
 $ComponentIds = @('loader', 'policies', 'userjs', 'ui', 'lifecycle', 'translate')
+
+# Scripts merged into another file: a new install removes them from the profile, otherwise they would run twice
+$RetiredFiles = @(
+    @{ Component = 'ui'; Rel = 'chrome/bookmarks_bottom.uc.js'; Into = 'ui.uc.js' }
+    @{ Component = 'ui'; Rel = 'chrome/bookmark_host_tag.uc.js'; Into = 'ui.uc.js' }
+    @{ Component = 'ui'; Rel = 'chrome/urlbar_domain.uc.js'; Into = 'ui.uc.js' }
+    @{ Component = 'ui'; Rel = 'chrome/topbar_autohide.uc.js'; Into = 'ui.uc.js' }
+)
 
 # ----------------------------------------------------------------------------------------------------------------
 # Source: which files go where / Kaynak
@@ -503,6 +513,25 @@ function Install-Tweaks {
         }
         & $Log (T 'log.copied' @($tag, $it.Rel))
     }
+
+    # Retired scripts: backed up like an overwritten file (uninstall puts back a file the user had before), then deleted
+    foreach ($r in @($RetiredFiles | Where-Object { $Ids -contains $_.Component })) {
+        $target = Join-Path $ProfileDir ($r.Rel -replace '/', '\')
+        if (-not (Test-Path -LiteralPath $target)) { continue }
+        $entry = $m.files | Where-Object { $_.target -eq $target } | Select-Object -First 1
+        if (-not $entry) {
+            $bk = 'files/{0:D3}-{1}' -f ($m.files.Count + 1), (Split-Path -Leaf $target)
+            if (-not $DryRun) {
+                $bp = Join-Path $backupRoot ($bk -replace '/', '\')
+                New-Item -ItemType Directory -Path (Split-Path -Parent $bp) -Force | Out-Null
+                Copy-Item -LiteralPath $target -Destination $bp -Force
+            }
+            & $Log (T 'log.backup' @($tag, $target))
+            [void]$m.files.Add([pscustomobject]@{ target = $target; existed = $true; backup = $bk; sha = $null })
+        } else { $entry.sha = $null }
+        if (-not $DryRun) { Remove-Item -LiteralPath $target -Force }
+        & $Log (T 'log.retired' @($tag, $r.Into, $r.Rel))
+    }
     if (-not $DryRun) { Save-Manifest $ProfileDir $m }
     & $Log (T 'log.done.install' @($tag))
 }
@@ -583,7 +612,7 @@ function Remove-ScriptFile {
 # ----------------------------------------------------------------------------------------------------------------
 # Settings engine: schema (settings.json), read / write values in the installed files
 #   kinds: css (a --variable in userChrome.css), js (KEY: value in a .uc.js), pref (user_pref in prefs.js),
-#          toggle (a region of userChrome.css between "@ft:begin ID" and "@ft:end ID" markers, switched off by commenting out)
+#          toggle (a region of a .css file between "@ft:begin ID" and "@ft:end ID" markers, switched off by commenting out)
 # ----------------------------------------------------------------------------------------------------------------
 function Get-Schema([string]$Ref_) {
     if ($ScriptDir -and (Test-Path -LiteralPath (Join-Path $ScriptDir 'settings.json'))) {

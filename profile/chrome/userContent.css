@@ -1,0 +1,17 @@
+/* @ft:begin hide-managed-notice */
+/*
+   EN: Hides the "Your browser is being managed by your organization" box on the Settings page. Firefox shows it
+       whenever firefox-install/distribution/policies.json is installed; no policy turns it off. about:preferences
+       is a CONTENT page: userChrome.css does not apply to it, so the rule lives here (userContent.css). It only
+       hides the box; the policies keep working.
+
+   TR: Ayarlar sayfasındaki "Tarayıcınız kuruluşunuz tarafından yönetiliyor" kutusunu gizler. firefox-install/distribution/policies.json
+   kurulu olduğu sürece Firefox bu kutuyu gösterir, hiçbir ilke kapatmaz. about:preferences bir İÇERİK sayfasıdır: userChrome.css ona
+   uygulanmaz, kural bu yüzden burada (userContent.css) durur. Yalnızca kutuyu gizler, ilkeler çalışmaya devam eder. */
+@-moz-document url-prefix("about:preferences"), url-prefix("about:settings") {
+  #policies-container,
+  #policies-container-content {
+    display: none !important;
+  }
+}
+/* @ft:end hide-managed-notice */

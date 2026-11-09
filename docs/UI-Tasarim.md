@@ -12,9 +12,8 @@ ekran görüntüsüyle bakıldı. Hiçbiri gerçek günlük profilde uzun süre 
 | Dosya | Ne yapar |
 |---|---|
 | `profile/chrome/userChrome.css` | Yer imi çubuğunu alta taşır, dikey sekme şeridini sıkılaştırır, adres çubuğunu daraltıp ortalar, alan adı yer tutucusunu çizer |
-| `profile/chrome/bookmarks_bottom.uc.js` | Sayfa alanının sol/sağ kenarını ölçüp CSS değişkenlerine yazar; dikey çubuğun altındaki düğmeleri yer imi çubuğuyla hizalar |
-| `profile/chrome/bookmark_host_tag.uc.js` | Yer imi düğmelerine alan adını `data-bm-host` olarak yazar; userChrome.css koyu temada tek renkli simgeleri (GitHub, X) buna göre ters çevirir |
-| `profile/chrome/urlbar_domain.uc.js` | Adres çubuğu odakta değilken yalnızca ana alan adını gösterir (tıklayınca tam URL) |
+| `profile/chrome/ui.uc.js` | CSS'in yardımcıları, bölüm bölüm (`[ui:...]` etiketi userChrome.css'teki bloğuyla aynı): `bookmarks-bottom` sayfa alanının sol/sağ kenarını ölçüp CSS değişkenlerine yazar, dikey çubuğun altındaki düğmeleri yer imi çubuğuyla hizalar; `bookmark-host-tag` yer imi düğmelerine alan adını `data-bm-host` olarak yazar (koyu temada tek renkli simgeler ters çevrilir); `urlbar-domain` adres çubuğu odakta değilken yalnızca ana alan adını gösterir; `topbar-autohide` üst çubuğun açık/kapalı durumunu ve kapanış gecikmesini yönetir, sağ tık menüsüne "Üst çubuğu otomatik gizle" ekler |
+| `profile/chrome/userContent.css` | Ayarlar sayfasındaki "kuruluşunuz tarafından yönetiliyor" kutusunu gizler |
 | `profile/chrome/ExtensionToggleManager.uc.js` | Yeniden tasarlanan uzantı yöneticisi paneli |
 | `profile/chrome/tab_lifecycle.uc.js` | Günlük kapatma düzeltmesi ve ses çalan sekme için kırpma seçenekleri |
 | `profile/user.js` | `toolkit.legacyUserProfileCustomizations.stylesheets = true` (userChrome.css'in yüklenmesi için) |
@@ -30,7 +29,7 @@ ekran görüntüsüyle bakıldı. Hiçbiri gerçek günlük profilde uzun süre 
 - Sayfa alanı olan `#tabbrowser-tabbox`, `--bm-total` kadar kısaltılır (alttan `margin`). Dikey çubuk tam yükseklikte kalır,
   yalnızca sayfa alanı kısalır. Çubuk "yalnızca yeni sekmede göster" modunda gizliyse `:has()` ile boşluk bırakılmaz.
 - Çubuğun sol/sağ kenarı sabit değildir: dikey çubuk açılıp kapanınca ya da sürüklenince sayfa alanı değişir.
-  `bookmarks_bottom.uc.js` bir `ResizeObserver` ile `#tabbrowser-tabbox` kenarlarını ölçüp `--bm-left` / `--bm-right`
+  `ui.uc.js` [ui:bookmarks-bottom] bir `ResizeObserver` ile `#tabbrowser-tabbox` kenarlarını ölçüp `--bm-left` / `--bm-right`
   değişkenlerine yazar. CSS çubuğu bu değişkenlerle konumlar.
 
 **Yolda öğrenilenler (hepsi ölçüldü)**
@@ -45,7 +44,7 @@ ekran görüntüsüyle bakıldı. Hiçbiri gerçek günlük profilde uzun süre 
 - **Dikey çubuğun altındaki düğmeler** (daraltılmışken "»", genişlemişken araç düğmeleri) yer imi çubuğunun satırıyla
   aynı hizada değildi. Merkezleri pencere altından ölçüldü: "»" 26px, araç düğmeleri satırı 20px, yer imi çubuğu 18px.
   Düğmeler kenar çubuğunun shadow DOM'unda; `::part()` CSS kuralı etki etmedi (ölçüldü), bu yüzden
-  `bookmarks_bottom.uc.js` stili doğrudan shadow köküne `adoptedStyleSheets` ile ekler. Üçü de 18px'e oturdu.
+  `ui.uc.js` [ui:bookmarks-bottom] stili doğrudan shadow köküne `adoptedStyleSheets` ile ekler. Üçü de 18px'e oturdu.
 
 **Yer imi çubuğu gizlenince alttaki boşluğun kalması (hata, düzeltildi):** "Yer imlerini gizle" denince çubuk gizleniyordu ama alttaki boşluk
 ve arka plan kalıyordu. Sebep: Firefox çubuğu gizlerken `collapsed` özniteliğini **boş değerle** (`collapsed=""`) yazıyor, kurallarım ise
@@ -187,8 +186,8 @@ Aday nedenler: Google hesabına giriş ve izleme geçmişi, uBlock/içerik engel
 1. README'deki kurulumu yapın (autoconfig dosyaları, `user.js`, `chrome\*.uc.js`).
 2. `userChrome.css` ve yeni `*.uc.js` dosyalarını profilin `chrome\` klasörüne kopyalayın; Firefox'u yeniden başlatın.
 3. Tek bir parçayı kapatmak: ilgili dosyayı `chrome\` klasöründen çıkarın.
-   - Yer imi çubuğu altta: `userChrome.css`'in ilgili bölümünü silin (ya da dosyayı çıkarın), `bookmarks_bottom.uc.js`'i çıkarın.
-   - Alan adı gösterimi: `urlbar_domain.uc.js`'i çıkarın (CSS tek başına bir şey değiştirmez, `data-host` olmadan çalışmaz).
+   - Yer imi çubuğu altta: `userChrome.css`'in ilgili bölümünü silin ya da kurulum aracının Ayarlar sekmesinden kapatın.
+   - Alan adı gösterimi: kurulum aracının Ayarlar sekmesinden kapatın (CSS tek başına bir şey değiştirmez, `data-host` olmadan çalışmaz).
 4. Ayarlar (`--bm-*`, `--vt-*`, `--urlbar-*`) `userChrome.css`'in başındadır; sayı değiştirip yeniden başlatmak yeterli.
 
 ## 9. Ana profildeki ayarların kaydı (`about:config`)

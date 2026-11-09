@@ -69,7 +69,7 @@
           "kind": "css",
           "key": "--vt-box",
           "type": "number",
-          "default": 26,
+          "default": 30,
           "en": {
             "label": "Vertical tab box size",
             "desc": "Size of each tab's square in the collapsed vertical tab strip. The strip is this size plus twice the side padding wide."
@@ -126,7 +126,7 @@
           "kind": "css",
           "key": "--vt-scale",
           "type": "number",
-          "default": 0.9,
+          "default": 1,
           "en": {
             "label": "Vertical bar scale",
             "desc": "Scales the whole vertical bar (tabs and sidebar buttons). 1 = Firefox default size, smaller = more compact."
@@ -221,12 +221,12 @@
           "default": true,
           "en": {
             "label": "Auto-hide the top bar",
-            "desc": "The top bar (back/forward, address bar, extensions) slides out of view; only a thin strip stays at the top edge. Move the mouse to that strip, press Ctrl+L or open a menu to bring it back; it hides again shortly after the mouse leaves. Only for maximized windows. The page moves down while the bar is open.",
+            "desc": "The top bar (back/forward, address bar, extensions) slides out of view; only a thin strip stays at the top edge (below the tab strip with horizontal tabs). Move the mouse to that strip, press Ctrl+L or open a menu to bring it back; it hides again shortly after the mouse leaves. Only for maximized windows. The page moves down while the bar is open. Can also be switched on and off from the toolbar's right-click menu (\"Auto-hide the top bar\"; needs ui.uc.js).",
             "diagram": "hidden:                 shown (mouse at the top / Ctrl+L):\n+----------------+      +-----------------+\n|=== thin strip =|      |<  >  [ address ] |\n|                |      +-----------------+\n|      page      |      |      page       |\n+----------------+      +-----------------+"
           },
           "tr": {
             "label": "Üst çubuğu otomatik gizle",
-            "desc": "Üst çubuk (geri/ileri, adres çubuğu, uzantılar) görünmez olur; üst kenarda yalnızca ince bir şerit kalır. Fareyi o şeride getirince, Ctrl+L ile ya da bir menü açılınca çubuk geri gelir; fare ayrılınca kısa süre sonra yine gizlenir. Yalnızca büyütülmüş pencerelerde çalışır. Çubuk açıkken sayfa aşağı iner.",
+            "desc": "Üst çubuk (geri/ileri, adres çubuğu, uzantılar) görünmez olur; üst kenarda (yatay sekmelerde sekme şeridinin altında) yalnızca ince bir şerit kalır. Fareyi o şeride getirince, Ctrl+L ile ya da bir menü açılınca çubuk geri gelir; fare ayrılınca kısa süre sonra yine gizlenir. Yalnızca büyütülmüş pencerelerde çalışır. Çubuk açıkken sayfa aşağı iner. Araç çubuğunun sağ tık menüsünden de açılıp kapatılabilir (\"Üst çubuğu otomatik gizle\"; ui.uc.js gerekir).",
             "diagram": "gizli:                  görünür (fare üstte / Ctrl+L):\n+----------------+      +-----------------+\n|=== ince şerit =|      |<  >  [ adres ]   |\n|                |      +-----------------+\n|     sayfa      |      |      sayfa      |\n+----------------+      +-----------------+"
           }
         },
@@ -273,7 +273,7 @@
           "kind": "css",
           "key": "--ah-close-delay",
           "type": "number",
-          "default": 0.6,
+          "default": 0.8,
           "en": {
             "label": "Hide delay",
             "desc": "How long the top bar waits after the mouse leaves before it hides again, in seconds."
@@ -295,13 +295,38 @@
           "default": true,
           "en": {
             "label": "Show only the domain in the address bar",
-            "desc": "While the address bar is not focused it shows only the site's main domain, centered (for example github.com instead of the full address). Click it or press Ctrl+L to see the full URL. Needs urlbar_domain.uc.js.",
+            "desc": "While the address bar is not focused it shows only the site's main domain, centered (for example github.com instead of the full address). Click it or press Ctrl+L to see the full URL. Needs ui.uc.js.",
             "diagram": "unfocused:   [      github.com       ]\nfocused:     [ https://github.com/ezeraiser/... ]"
           },
           "tr": {
             "label": "Adres çubuğunda yalnızca alan adı",
-            "desc": "Adres çubuğuna odaklanılmadığında yalnızca sitenin ana alan adını ortalı gösterir (tam adres yerine örneğin github.com). Tıklayınca ya da Ctrl+L ile tam adres görünür. urlbar_domain.uc.js gerekir.",
+            "desc": "Adres çubuğuna odaklanılmadığında yalnızca sitenin ana alan adını ortalı gösterir (tam adres yerine örneğin github.com). Tıklayınca ya da Ctrl+L ile tam adres görünür. ui.uc.js gerekir.",
             "diagram": "odaksız:     [      github.com       ]\nodaklı:      [ https://github.com/ezeraiser/... ]"
+          }
+        }
+      ]
+    },
+    {
+      "id": "content",
+      "file": "chrome/userContent.css",
+      "title": {
+        "en": "Firefox pages (userContent.css)",
+        "tr": "Firefox sayfaları (userContent.css)"
+      },
+      "settings": [
+        {
+          "id": "toggle.hide-managed-notice",
+          "kind": "toggle",
+          "key": "hide-managed-notice",
+          "type": "bool",
+          "default": true,
+          "en": {
+            "label": "Hide the \"managed by your organization\" notice",
+            "desc": "Firefox shows \"Your browser is being managed by your organization\" at the top of the Settings page because policies.json is installed. This hides that box; the policies keep working."
+          },
+          "tr": {
+            "label": "\"Kuruluşunuz tarafından yönetiliyor\" uyarısını gizle",
+            "desc": "policies.json kurulu olduğu için Firefox Ayarlar sayfasının üstünde \"Tarayıcınız kuruluşunuz tarafından yönetiliyor\" kutusunu gösterir. Bu ayar o kutuyu gizler; ilkeler çalışmaya devam eder."
           }
         }
       ]
