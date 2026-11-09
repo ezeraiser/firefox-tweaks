@@ -14,4 +14,13 @@
     display: none !important;
   }
 }
+/*
+   EN: about:support: the "Enterprise Policies: Active" row in Application Basics.
+
+   TR: about:support: "Uygulama temelleri" tablosundaki "Kurumsal ilkeler: Etkin" satırı. */
+@-moz-document url-prefix("about:support") {
+  #policies-status-row {
+    display: none !important;
+  }
+}
 /* @ft:end hide-managed-notice */

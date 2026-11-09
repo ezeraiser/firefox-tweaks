@@ -322,11 +322,11 @@
           "default": true,
           "en": {
             "label": "Hide the \"managed by your organization\" notice",
-            "desc": "Firefox shows \"Your browser is being managed by your organization\" at the top of the Settings page because policies.json is installed. This hides that box; the policies keep working."
+            "desc": "Firefox shows \"Your browser is being managed by your organization\" at the top of the Settings page because policies.json is installed. This hides that box (and the \"Enterprise Policies: Active\" row on about:support); the policies keep working."
           },
           "tr": {
             "label": "\"Kuruluşunuz tarafından yönetiliyor\" uyarısını gizle",
-            "desc": "policies.json kurulu olduğu için Firefox Ayarlar sayfasının üstünde \"Tarayıcınız kuruluşunuz tarafından yönetiliyor\" kutusunu gösterir. Bu ayar o kutuyu gizler; ilkeler çalışmaya devam eder."
+            "desc": "policies.json kurulu olduğu için Firefox Ayarlar sayfasının üstünde \"Tarayıcınız kuruluşunuz tarafından yönetiliyor\" kutusunu gösterir. Bu ayar o kutuyu (ve about:support'taki \"Kurumsal ilkeler: Etkin\" satırını) gizler; ilkeler çalışmaya devam eder."
           }
         }
       ]
@@ -825,7 +825,7 @@
           "kind": "js",
           "key": "DISCARD_AFTER_SECONDS",
           "type": "int",
-          "default": 1800,
+          "default": 900,
           "en": {
             "label": "Discard a tab after (seconds)",
             "desc": "A tab hidden this long is discarded: its process closes and the page reloads when you click it. 0 = never."
